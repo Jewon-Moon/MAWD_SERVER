@@ -99,6 +99,7 @@ function mapServerInquiry(raw: any): InquiryItem {
     call: '전화',
     chat: '채널톡',
     channeltalk: '채널톡',
+    sns: '인스타그램',
     instagram: '인스타그램',
     stibee: '스티비',
     kakao: '카카오채널',

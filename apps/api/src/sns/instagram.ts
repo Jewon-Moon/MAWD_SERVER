@@ -148,6 +148,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
         message: [`@${c.username ?? '알 수 없음'}`, `감정 ${Math.round(heat)}점`, j.abusive ? '욕설 · 비하 표현' : null, ...j.riskFlags, j.needsOwner ? '사장님 판단 필요' : null].filter(Boolean).join(' · '),
       }).catch(() => null);
     }
+    deps.alerts?.emitEvent?.(tenantId, 'inquiry', { id: inquiryId });
     return { action, heat, reply };
   }
 
