@@ -39,6 +39,16 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
   const sessions = new Map<string, Promise<ChatSession>>();
   const closed = new Map<string, ChatSession>(); // 마무리된 대화 (데모 화면이 카드를 읽음). 최근 100개만
   const key = (tenantId: string, chatId: string) => `${tenantId}:${chatId}`;
+  // 최근 받은 메시지 id (채널톡이 같은 웹훅을 다시 보내면 무시). 최근 2000개
+  const seen = new Set<string>();
+  const firstTime = (tenantId: string, id: string | null | undefined) => {
+    if (!id) return true;
+    const k = `${tenantId}:${id}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    if (seen.size > 2000) seen.delete(seen.values().next().value!);
+    return true;
+  };
   const turnDeps = (sess: ChatSession) => ({ db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(sess.tenantId) });
 
   async function open(tenantId: string, msg: IncomingMessage): Promise<ChatSession> {
@@ -109,6 +119,7 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
       await loadConfig(deps.db, tenantId); // 웹훅은 로그인 없이 와서 매장 설정을 여기서 읽음
       const { response } = getTenantConfig(tenantId).settings;
       if (!response.ai_enabled || !response.channels.chat) return; // AI 꺼진 매장: 사장님이 채널톡에서 직접 응대
+      if (!firstTime(tenantId, msg.messageId)) return;
       const k = key(tenantId, msg.chatId);
       let p = sessions.get(k);
       if (!p) { p = open(tenantId, msg); sessions.set(k, p); p.catch(() => sessions.delete(k)); }

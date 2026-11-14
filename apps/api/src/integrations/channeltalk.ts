@@ -8,7 +8,7 @@ import { ApiError } from '../errors.js';
 import type { SecretBox } from '../secrets.js';
 
 type Db = ReturnType<typeof createDb>;
-export type IncomingMessage = { chatId: string; text: string; customerName: string | null; customerPhone: string | null };
+export type IncomingMessage = { chatId: string; text: string; customerName: string | null; customerPhone: string | null; messageId?: string | null };
 
 function extractText(e: Record<string, unknown>): string {
   if (typeof e.plainText === 'string' && e.plainText.trim()) return e.plainText.trim();
@@ -35,7 +35,7 @@ export function parseWebhook(body: unknown): IncomingMessage | null {
   if (e.chatType !== 'userChat' || e.personType !== 'user') return null;
   const text = extractText(e);
   if (!text || typeof e.chatId !== 'string') return null;
-  return { chatId: e.chatId, text: text.slice(0, 2000), customerName: b.refers?.user?.name ?? null, customerPhone: b.refers?.user?.profile?.mobileNumber ?? null };
+  return { chatId: e.chatId, text: text.slice(0, 2000), customerName: b.refers?.user?.name ?? null, customerPhone: b.refers?.user?.profile?.mobileNumber ?? null, messageId: typeof e.id === 'string' ? e.id : null };
 }
 
 export interface ChatSender {

@@ -48,15 +48,20 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
     app.post('/webhooks/instagram', {
       schema: { tags: ['webhooks'], body: z.unknown(), response: { 200: z.object({ ok: z.literal(true) }) }, description: 'Meta 인스타그램 웹훅 (댓글). 앱 시크릿 서명이 맞아야 받음. 바로 200, 처리는 뒤에서' },
     }, async (req) => {
-      const secret = env.INSTAGRAM_APP_SECRET?.trim();
-      if (!secret) throw new ApiError(503, 'instagram_not_configured', '서버에 INSTAGRAM_APP_SECRET이 없습니다.');
-      if (!verifyMetaSignature((req as unknown as { rawBody: Buffer }).rawBody, req.headers['x-hub-signature-256'] as string | undefined, secret)) {
+      // Meta 앱 시크릿 · 인스타그램 앱 시크릿이 다를 수 있음 (제품마다 서명 키가 달라서 한쪽 이벤트만 401로 버려지던 문제) → 쉼표로 여러 개
+      const secrets = [env.INSTAGRAM_APP_SECRET, env.INSTAGRAM_WEBHOOK_SECRETS].flatMap((v) => (v ?? '').split(',')).map((v) => v.trim()).filter(Boolean);
+      if (!secrets.length) throw new ApiError(503, 'instagram_not_configured', '서버에 INSTAGRAM_APP_SECRET이 없습니다.');
+      const raw = (req as unknown as { rawBody: Buffer }).rawBody, sig = req.headers['x-hub-signature-256'] as string | undefined;
+      if (!secrets.some((sec) => verifyMetaSignature(raw, sig, sec))) {
+        req.log.warn({ hasSig: !!sig }, 'instagram webhook signature mismatch');
         throw new ApiError(401, 'invalid_signature', '웹훅 서명이 맞지 않습니다.');
       }
-      for (const c of parseCommentWebhook(req.body)) {
+      const comments = parseCommentWebhook(req.body);
+      req.log.info({ comments: comments.length }, 'instagram webhook received');
+      for (const c of comments) {
         void (async () => {
           const tenantId = await deps.db.tenantForInstagram(c.igUserId);
-          if (!tenantId) return;
+          if (!tenantId) { req.log.warn({ igUserId: c.igUserId, comment: c.commentId }, 'instagram webhook: no store connected to this account'); return; }
           await loadConfig(deps.db, tenantId);
           await deps.instagram.handleComment(tenantId, c);
         })().catch((err) => req.log.error({ err, comment: c.commentId }, 'instagram comment failed'));

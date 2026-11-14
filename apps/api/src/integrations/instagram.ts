@@ -7,14 +7,32 @@ const GRAPH = 'https://graph.instagram.com';
 export const FB_GRAPH = 'https://graph.facebook.com';
 export type InstagramClient = ReturnType<typeof createInstagramClient>;
 
+/** Graph API 오류. code = Meta 오류 코드 (4 · 17 · 32 · 613 · 80002 = 요청 한도 초과) */
+export class InstagramApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code: number | null) { super(message); }
+}
+const RATE_CODES = new Set([4, 17, 32, 613, 80002]);
+export const isRateLimited = (e: unknown) => e instanceof InstagramApiError && (e.status === 429 || (e.code !== null && RATE_CODES.has(e.code)));
+
 export function createInstagramClient(fetchFn: typeof fetch = fetch, base = GRAPH) {
+  async function once<T>(url: URL, token: string, method: string): Promise<T> {
+    const res = await fetchFn(url, { method, headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) });
+    const j = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number } };
+    if (!res.ok || j.error) throw new InstagramApiError(`instagram ${url.pathname.split('/')[1] ?? ''} ${res.status}: ${j.error?.message ?? ''}`.slice(0, 200), res.status, j.error?.code ?? null);
+    return j;
+  }
   async function call<T>(path: string, token: string, init: { method?: string; query?: Record<string, string> } = {}): Promise<T> {
     const url = new URL(`${base}/${path}`);
     for (const [k, v] of Object.entries(init.query ?? {})) url.searchParams.set(k, v);
-    const res = await fetchFn(url, { method: init.method ?? 'GET', headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(8_000) });
-    const j = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number } };
-    if (!res.ok || j.error) throw new Error(`instagram ${path.split('/')[0]} ${res.status}: ${j.error?.message ?? ''}`.slice(0, 200));
-    return j;
+    const method = init.method ?? 'GET';
+    try { return await once<T>(url, token, method); }
+    catch (e) {
+      // 조회(GET)만 일시 오류(네트워크 · 시간 초과 · 5xx)에 한 번 재시도. 답글 같은 POST는 중복 게시될 수 있어 재시도하지 않음
+      const transient = !(e instanceof InstagramApiError) || e.status >= 500;
+      if (method !== 'GET' || !transient) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+      return once<T>(url, token, method);
+    }
   }
   return {
     /** 토큰의 인스타 비즈니스 계정. user_id = 웹훅 entry.id와 같은 값 */

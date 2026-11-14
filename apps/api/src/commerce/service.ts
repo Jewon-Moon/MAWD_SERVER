@@ -299,7 +299,7 @@ export function createCommerceService(deps: { db: Db; secrets: SecretBox; fetchF
       running = true;
       try {
         const tenantIds = await deps.db.tenantsWithConnections();
-        for (const t of tenantIds) await syncTenant(t);
+        for (const t of tenantIds) await syncTenant(t).catch((err) => deps.log?.error({ err, tenantId: t }, 'commerce sync failed for tenant'));
       } catch (err) {
         deps.log?.error({ err }, 'commerce background sync failed');
       } finally {
