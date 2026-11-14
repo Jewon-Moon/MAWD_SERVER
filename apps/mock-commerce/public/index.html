@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>더미 커머스 스토어 — 실시간 시연 콘솔</title>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --line: #e2e5ef;
+    --text: #111827;
+    --muted: #5b6476;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --ok: #15803d;
+    --ok-soft: #ecfdf5;
+    --warn: #b45309;
+    --warn-soft: #fffbeb;
+    --danger: #b91c1c;
+    --danger-soft: #fef2f2;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", sans-serif;
+  }
+  .visually-hidden:where(:not(:focus-within, :active)) {
+    position: absolute !important;
+    clip-path: inset(50%) !important;
+    overflow: hidden !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    white-space: nowrap !important;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 14px 20px;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 17px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .spacer { margin-inline-start: auto; }
+  .header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  main {
+    max-width: 1320px;
+    margin: 18px auto;
+    padding: 0 16px 32px;
+    display: grid;
+    grid-template-columns: minmax(340px, 460px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+  .stack { display: flex; flex-direction: column; gap: 16px; }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .panel h2 { margin: 0 0 6px; font-size: 16px; }
+  .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-block-end: 14px; }
+  button, a.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--text);
+    padding: 8px 12px;
+    min-height: 38px;
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button.chip { padding: 5px 10px; min-height: 32px; font-size: 12px; border-radius: 999px; background: #f8fafc; }
+  button.sm { padding: 4px 8px; min-height: 30px; font-size: 12px; border-radius: 6px; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a.btn:focus-visible, .table-wrapper:focus-visible {
+    outline: 3px solid #1d4ed8;
+    outline-offset: 2px;
+  }
+
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
+  legend { padding: 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .radio-row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .radio-opt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 36px; }
+  .radio-opt input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-block-end: 12px; }
+  .field label { font-size: 12px; font-weight: 600; color: #374151; }
+  .hint { font-size: 12px; color: var(--muted); }
+  input[type="text"], input[type="tel"], select, textarea {
+    font: inherit;
+    font-size: max(1rem, 1em);
+    width: 100%;
+    padding: 8px 10px;
+    min-height: 42px;
+    border: 1px solid #9ca3af;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+  }
+  textarea { min-height: 82px; resize: vertical; }
+  .error-msg { display: none; color: var(--danger); font-size: 12px; }
+  :is(input, select, textarea):is(:user-invalid, .user-invalid-fallback) {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+  }
+  :is(input, select, textarea):is(:user-invalid, .user-invalid-fallback) + .error-msg { display: block; }
+  :is(input, select, textarea):user-valid { border-color: #16a34a; }
+
+  .check-row { display: flex; align-items: center; gap: 8px; margin-block-end: 12px; min-height: 36px; cursor: pointer; }
+  .check-row input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  /* Responsive table (responsive-table guide) */
+  .table-wrapper {
+    overflow: auto;
+    max-inline-size: 100%;
+    max-block-size: min(640px, 74vh);
+    container-type: inline-size;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  caption { text-align: start; padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); background: #fafbfe; }
+  thead { position: sticky; inset-block-start: 0; z-index: 2; background: #f8fafc; }
+  th, td { padding: 10px 10px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: middle; }
+  thead th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tbody th {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background: #fff;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  @container (width < 640px) {
+    table, thead, tbody, tr, th, td { display: block; }
+    thead { display: none; }
+    tr { margin-block-end: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+    tbody th { position: sticky; inset-block-start: 0; z-index: 2; background: #f3f4f6; border-bottom: 1px solid var(--line); }
+    td { border-bottom: 1px solid #f1f5f9; }
+    td::before { font-weight: 600; color: var(--muted); }
+    td:nth-child(2)::before { content: var(--label-2) ": "; }
+    td:nth-child(3)::before { content: var(--label-3) ": "; }
+    td:nth-child(4)::before { content: var(--label-4) ": "; }
+    td:nth-child(5)::before { content: var(--label-5) ": "; }
+    td:nth-child(6)::before { content: var(--label-6) ": "; }
+    td:nth-child(7)::before { content: var(--label-7) ": "; }
+  }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .tag.naver { background: #dcfce7; color: #166534; }
+  .tag.coupang { background: #fee2e2; color: #991b1b; }
+  .tag.st { background: #eef2ff; color: #3730a3; }
+
+  .chat-box {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fafbfe;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 290px;
+    overflow-y: auto;
+  }
+  .msg { padding: 8px 11px; border-radius: 10px; max-width: 90%; white-space: pre-wrap; font-size: 13px; }
+  .msg.customer { align-self: flex-end; background: var(--accent); color: #fff; }
+  .msg.ai { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+  .card-preview {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #bfdbfe;
+    background: var(--accent-soft);
+    font-size: 12px;
+  }
+  .creds { margin-top: 10px; font-size: 12px; color: var(--muted); background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid var(--line); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .toast {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #111827;
+    color: #fff;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛒 더미 커머스 스토어 (실시간 시연용)</h1>
+  <span class="pill" id="mawdTarget">연동 대상 확인 중…</span>
+  <span class="pill warn" id="syncBadge">연동 전</span>
+  <div class="spacer"></div>
+  <div class="header-actions">
+    <button type="button" class="primary" id="connectBtn">1클릭 MAWD API 연결 + 동기화</button>
+    <button type="button" id="syncBtn">지금 동기화</button>
+    <button type="button" id="resetBtn">데이터 초기화</button>
+    <a class="btn" id="mawdConsoleLink" href="http://localhost:8000/console" target="_blank" rel="noopener">MAWD 콘솔</a>
+    <a class="btn" id="mawdDemoLink" href="http://localhost:8000/demo" target="_blank" rel="noopener">통화/채팅 데모</a>
+  </div>
+</header>
+
+<div id="form-announcer" class="visually-hidden" aria-live="polite"></div>
+
+<main>
+  <div class="stack">
+    <!-- 1. 실시간 주문 넣기 -->
+    <section class="panel" aria-labelledby="order-form-heading">
+      <h2 id="order-form-heading">1. 실시간 주문 넣기</h2>
+      <p class="sub">새 주문을 넣거나 상태를 바꾸면 MAWD AI가 실제 네이버/쿠팡 호환 API로 바로 읽어갑니다.</p>
+
+      <div class="presets" aria-label="빠른 주문 프리셋">
+        <button type="button" class="chip" data-preset="naver-payed">방금 결제된 네이버 주문</button>
+        <button type="button" class="chip" data-preset="coupang-ship">쿠팡 배송 출발 건</button>
+        <button type="button" class="chip" data-preset="naver-return">네이버 반품 요청</button>
+      </div>
+
+      <form id="orderForm" action="/api/orders" method="POST" aria-labelledby="order-form-heading">
+        <fieldset>
+          <legend>판매처</legend>
+          <div class="radio-row">
+            <label class="radio-opt"><input type="radio" name="platform" value="naver" checked> 네이버 스마트스토어</label>
+            <label class="radio-opt"><input type="radio" name="platform" value="coupang"> 쿠팡</label>
+          </div>
+        </fieldset>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="oName">주문자 이름 *</label>
+            <input type="text" id="oName" name="customerName" autocomplete="name" required data-error="oNameErr" value="김고객">
+            <div id="oNameErr" class="error-msg">주문자 이름을 입력해 주세요.</div>
+          </div>
+          <div class="field">
+            <label for="oPhone">연락처 *</label>
+            <input type="tel" id="oPhone" name="phone" inputmode="tel" autocomplete="tel" required minlength="4" data-error="oPhoneErr" value="010-1111-5678">
+            <div id="oPhoneErr" class="error-msg">연락처 4자리 이상을 입력해 주세요.</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="oItem">상품명 *</label>
+            <input type="text" id="oItem" name="itemName" required data-error="oItemErr" value="세라믹 머그컵 세트">
+            <div id="oItemErr" class="error-msg">상품명을 입력해 주세요.</div>
+          </div>
+          <div class="field">
+            <label for="oAmount">결제 금액(원) *</label>
+            <input type="text" id="oAmount" name="amount" inputmode="numeric" pattern="\d+" required data-error="oAmountErr" value="35000">
+            <div id="oAmountErr" class="error-msg">숫자 금액만 입력해 주세요.</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="oStatus">주문 상태</label>
+            <select id="oStatus" name="status">
+              <option value="결제 완료">결제 완료</option>
+              <option value="상품 준비중">상품 준비중</option>
+              <option value="배송중">배송중</option>
+              <option value="배송 완료">배송 완료</option>
+              <option value="취소 요청">취소 요청</option>
+              <option value="반품 요청">반품 요청</option>
+              <option value="교환 요청">교환 요청</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="oEta">도착 예정일</label>
+            <input type="text" id="oEta" name="eta" placeholder="YYYY-MM-DD" autocorrect="off" autocapitalize="none" spellcheck="false">
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="oCarrier">택배사 (배송중 이상 자동 채움)</label>
+            <input type="text" id="oCarrier" name="carrier" placeholder="예: CJ대한통운">
+          </div>
+          <div class="field">
+            <label for="oTrack">송장번호 (비우면 자동 생성)</label>
+            <input type="text" id="oTrack" name="trackingNo" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="예: 6080-1234-5678">
+          </div>
+        </div>
+
+        <label class="check-row">
+          <input type="checkbox" id="oAutoSync" name="autoSync" checked>
+          <span>주문 등록/변경 직후 MAWD 서버와 즉시 동기화</span>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="primary" id="orderSubmitBtn">주문 넣기</button>
+          <span class="hint">또는 끄면 실시간 단건 조회(주문번호 말하기) 테스트 가능</span>
+        </div>
+      </form>
+    </section>
+
+    <!-- 2. 실시간 고객 문의 넣기 -->
+    <section class="panel" aria-labelledby="inquiry-form-heading">
+      <h2 id="inquiry-form-heading">2. 실시간 고객 문의 넣기 (AI 응대 테스트)</h2>
+      <p class="sub">방금 넣은 주문으로 바로 문의를 보내면 MAWD AI가 주문·배송 상태를 읽고 답합니다.</p>
+
+      <div class="presets" aria-label="문의 시나리오">
+        <button type="button" class="chip" data-ask="방금 주문한 상품 언제 도착하나요?">배송 문의</button>
+        <button type="button" class="chip" data-ask="배송이 너무 늦는데 당장 환불해 주세요!!">격앙·환불 요구</button>
+        <button type="button" class="chip" data-ask="반품 접수하려고 하는데 어떻게 하나요?">반품 절차</button>
+      </div>
+
+      <form id="inquiryForm" action="/api/inquiries" method="POST" aria-labelledby="inquiry-form-heading">
+        <div class="grid-2">
+          <div class="field">
+            <label for="qName">고객명 *</label>
+            <input type="text" id="qName" name="customerName" required data-error="qNameErr" value="김고객">
+            <div id="qNameErr" class="error-msg">고객명을 입력해 주세요.</div>
+          </div>
+          <div class="field">
+            <label for="qOrderNo">참고 주문번호 (선택)</label>
+            <input type="text" id="qOrderNo" name="orderNo" autocorrect="off" autocapitalize="none" spellcheck="false" placeholder="목록에서 '문의' 클릭">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="qText">문의 내용 * (Enter로 전송, Shift+Enter 줄바꿈)</label>
+          <span id="qTextHint" class="hint">본인 확인을 위해 주문번호와 연락처 뒷 4자리를 함께 적어 바로 테스트할 수도 있습니다.</span>
+          <textarea id="qText" name="question" required aria-describedby="qTextHint" data-error="qTextErr" placeholder="예: 주문번호 20261114... 뒷자리 5678입니다. 언제 출고되나요?"></textarea>
+          <div id="qTextErr" class="error-msg">문의 내용을 입력해 주세요.</div>
+        </div>
+
+        <div class="row">
+          <button type="submit" class="primary" id="inquirySubmitBtn">문의 보내기</button>
+          <button type="button" id="newChatBtn">새 대화방</button>
+          <button type="button" class="danger" id="endChatBtn" disabled>대화 종료 (요약 카드)</button>
+          <span class="pill" id="chatStateBadge">대기</span>
+        </div>
+      </form>
+
+      <div class="chat-box" id="chatBox" aria-live="polite">
+        <div class="hint">문의를 보내면 여기에 AI 답변이 실시간 표시됩니다.</div>
+      </div>
+      <div class="card-preview" id="cardBox" hidden></div>
+    </section>
+  </div>
+
+  <!-- 3. 더미 쇼핑몰 실시간 주문 목록 -->
+  <section class="panel" aria-labelledby="orders-caption">
+    <div class="row" style="justify-content:space-between; margin-bottom:10px">
+      <div>
+        <h2 style="margin:0">3. 더미 커머스 주문 현황</h2>
+        <p class="sub" style="margin:2px 0 0">상태 버튼을 누르면 즉시 상태가 바뀌고(필요 시 자동 동기화) MAWD AI가 바뀐 상태를 반영합니다.</p>
+      </div>
+      <span class="pill" id="orderCount">0건</span>
+    </div>
+
+    <div tabindex="0" role="region" aria-labelledby="orders-caption" class="table-wrapper">
+      <table style="--label-2:'주문자'; --label-3:'상품/금액'; --label-4:'상태'; --label-5:'배송/송장'; --label-6:'업데이트'; --label-7:'조작';">
+        <caption id="orders-caption">실시간 주문 목록 (네이버 · 쿠팡 호환)</caption>
+        <thead>
+          <tr>
+            <th scope="col">판매처 · 주문번호</th>
+            <th scope="col">주문자</th>
+            <th scope="col">상품 · 금액</th>
+            <th scope="col">상태</th>
+            <th scope="col">배송 · 송장</th>
+            <th scope="col">갱신 시각</th>
+            <th scope="col">실시간 시연 조작</th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody"></tbody>
+      </table>
+    </div>
+
+    <div class="creds" id="credsBox"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const toast = (msg) => {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2800);
+};
+
+let state = { orders: [], inquiries: [], creds: null, mawdBase: 'http://localhost:8000' };
+let chatId = 'commerce-demo-' + Date.now();
+let lastOrderRef = null;
+
+// validate-input-after-interaction: ARIA sync + polite announcer
+const announcer = $('form-announcer');
+let announceTimer;
+const flagged = new WeakSet();
+const announced = new WeakSet();
+const linkError = (el, shown) => {
+  const errorId = el.dataset.error;
+  if (!errorId) return;
+  const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter((id) => id && id !== errorId);
+  if (shown) ids.push(errorId);
+  if (ids.length) el.setAttribute('aria-describedby', ids.join(' '));
+  else el.removeAttribute('aria-describedby');
+};
+const syncAria = (el, announce = false) => {
+  if (!el.matches?.('input, select, textarea')) return;
+  const invalid = el.matches(':user-invalid') || el.classList.contains('user-invalid-fallback');
+  if (invalid) {
+    if (announce && !announced.has(el)) {
+      const err = document.getElementById(el.dataset.error || '');
+      if (err) {
+        clearTimeout(announceTimer);
+        announcer.textContent = '';
+        announceTimer = setTimeout(() => { announcer.textContent = err.textContent.trim(); }, 400);
+      }
+      announced.add(el);
+    }
+    el.setAttribute('aria-invalid', 'true');
+    linkError(el, true);
+    flagged.add(el);
+  } else if (flagged.has(el) || el.getAttribute('aria-invalid') !== 'true') {
+    el.setAttribute('aria-invalid', 'false');
+    linkError(el, false);
+    flagged.delete(el);
+    announced.delete(el);
+  }
+};
+document.querySelectorAll('input, select, textarea').forEach((el) => syncAria(el));
+document.addEventListener('blur', (e) => syncAria(e.target, true), true);
+document.addEventListener('input', (e) => { if (e.target.hasAttribute('aria-invalid')) syncAria(e.target); });
+document.addEventListener('invalid', (e) => { announced.add(e.target); syncAria(e.target); }, true);
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, { headers: { 'content-type': 'application/json' }, ...opts });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+function renderOrders() {
+  $('orderCount').textContent = `${state.orders.length}건`;
+  const body = $('ordersBody');
+  body.replaceChildren();
+  for (const o of state.orders) {
+    const tr = document.createElement('tr');
+
+    const th = document.createElement('th');
+    th.scope = 'row';
+    const badge = document.createElement('span');
+    badge.className = `tag ${o.platform}`;
+    badge.textContent = o.platform === 'naver' ? '네이버' : '쿠팡';
+    const code = document.createElement('code');
+    code.style.display = 'block';
+    code.style.marginTop = '4px';
+    code.textContent = o.orderNo;
+    th.append(badge, code);
+
+    const tdCust = document.createElement('td');
+    tdCust.textContent = `${o.customerName} (${o.phone})`;
+
+    const tdItem = document.createElement('td');
+    tdItem.textContent = `${o.itemName}${o.quantity > 1 ? ` ×${o.quantity}` : ''} · ${o.amount.toLocaleString()}원`;
+
+    const tdSt = document.createElement('td');
+    const stTag = document.createElement('span');
+    stTag.className = 'tag st';
+    stTag.textContent = o.status;
+    tdSt.append(stTag);
+
+    const tdShip = document.createElement('td');
+    tdShip.textContent = o.trackingNo ? `${o.carrier || ''} ${o.trackingNo}` : (o.eta ? `예정 ${o.eta}` : '-');
+
+    const tdTime = document.createElement('td');
+    tdTime.textContent = new Date(o.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const tdAct = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.className = 'row';
+    const mkBtn = (label, cls, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `sm ${cls}`;
+      b.textContent = label;
+      b.onclick = fn;
+      return b;
+    };
+    wrap.append(
+      mkBtn('발송 처리', '', () => patchOrder(o.id, { status: '배송중' })),
+      mkBtn('배송 완료', '', () => patchOrder(o.id, { status: '배송 완료' })),
+      mkBtn('반품 요청', '', () => patchOrder(o.id, { status: '반품 요청' })),
+      mkBtn('이 주문으로 문의', 'primary', () => fillInquiryFromOrder(o)),
+      mkBtn('삭제', '', () => removeOrder(o.id)),
+    );
+    tdAct.append(wrap);
+
+    tr.append(th, tdCust, tdItem, tdSt, tdShip, tdTime, tdAct);
+    body.append(tr);
+  }
+}
+
+async function loadState() {
+  state = await api('/api/state', { method: 'GET' });
+  const pubBase = state.mawdPublicBase || state.mawdBase;
+  $('mawdTarget').textContent = `MAWD 대상: ${state.mawdBase}`;
+  $('mawdConsoleLink').href = `${pubBase}/console`;
+  $('mawdDemoLink').href = `${pubBase}/demo`;
+  renderOrders();
+  if (state.creds) {
+    $('credsBox').textContent = '';
+    const line = document.createElement('div');
+    line.innerHTML = '<strong>더미 API 자격증명 (자동 연결 시 사용됨):</strong> ';
+    const code = document.createElement('code');
+    code.textContent = `Naver client_id=${state.creds.naver.client_id} / Coupang vendor_id=${state.creds.coupang.vendor_id}`;
+    line.append(code);
+    $('credsBox').append(line);
+  }
+}
+
+async function patchOrder(id, patch) {
+  try {
+    const res = await api(`/api/orders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ ...patch, autoSync: $('oAutoSync').checked }),
+    });
+    if (res.sync?.ok) {
+      $('syncBadge').className = 'pill ok';
+      $('syncBadge').textContent = 'MAWD 동기화됨';
+    }
+    toast(`상태 변경: ${res.order.status}${res.sync?.ok ? ' (MAWD 동기화 완료)' : ''}`);
+    await loadState();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function removeOrder(id) {
+  try {
+    await api(`/api/orders/${id}`, { method: 'DELETE' });
+    toast('주문을 삭제했습니다.');
+    await loadState();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function fillInquiryFromOrder(o) {
+  lastOrderRef = o;
+  $('qName').value = o.customerName;
+  $('qOrderNo').value = o.orderNo;
+  const last4 = o.phone.replace(/\D/g, '').slice(-4);
+  $('qText').value = `주문번호 ${o.orderNo} (연락처 뒷자리 ${last4}) 주문한 ${o.itemName} 현재 상태 알려주세요.`;
+  $('qText').focus();
+  toast('문의 폼에 주문 정보를 채웠습니다.');
+}
+
+document.querySelectorAll('[data-preset]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const p = btn.dataset.preset;
+    const radio = (v) => document.querySelector(`input[name="platform"][value="${v}"]`);
+    if (p === 'naver-payed') {
+      radio('naver').checked = true;
+      $('oName').value = '김고객'; $('oPhone').value = '010-1111-5678';
+      $('oItem').value = '수제 도자기 머그컵'; $('oAmount').value = '29000';
+      $('oStatus').value = '결제 완료'; $('oCarrier').value = ''; $('oTrack').value = '';
+    } else if (p === 'coupang-ship') {
+      radio('coupang').checked = true;
+      $('oName').value = '이고객'; $('oPhone').value = '010-2222-9999';
+      $('oItem').value = '보온 텀블러 (500ml)'; $('oAmount').value = '34000';
+      $('oStatus').value = '배송중'; $('oCarrier').value = '한진택배'; $('oTrack').value = '';
+    } else if (p === 'naver-return') {
+      radio('naver').checked = true;
+      $('oName').value = '박고객'; $('oPhone').value = '010-3333-1212';
+      $('oItem').value = '리넨 원피스 (M)'; $('oAmount').value = '68000';
+      $('oStatus').value = '반품 요청'; $('oCarrier').value = 'CJ대한통운'; $('oTrack').value = '';
+    }
+    toast('주문 프리셋을 적용했습니다.');
+  });
+});
+
+document.querySelectorAll('[data-ask]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const prefix = $('qOrderNo').value.trim() ? `주문번호 ${$('qOrderNo').value.trim()} 관련입니다. ` : '';
+    $('qText').value = prefix + btn.dataset.ask;
+    $('qText').focus();
+  });
+});
+
+$('orderForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  if (!form.reportValidity()) return;
+  const submitBtn = $('orderSubmitBtn');
+  submitBtn.disabled = true;
+  try {
+    const fd = new FormData(form);
+    const payload = {
+      platform: fd.get('platform'),
+      customerName: fd.get('customerName'),
+      phone: fd.get('phone'),
+      itemName: fd.get('itemName'),
+      amount: Number(fd.get('amount')),
+      status: fd.get('status'),
+      carrier: fd.get('carrier') || null,
+      trackingNo: fd.get('trackingNo') || null,
+      eta: fd.get('eta') || null,
+      autoSync: $('oAutoSync').checked,
+    };
+    const res = await api('/api/orders', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.sync?.ok) {
+      $('syncBadge').className = 'pill ok';
+      $('syncBadge').textContent = 'MAWD 동기화됨';
+    }
+    $('qOrderNo').value = res.order.orderNo;
+    $('qName').value = res.order.customerName;
+    toast(`주문 등록: ${res.order.orderNo}${res.sync?.ok ? ' (MAWD 동기화 완료)' : ''}`);
+    await loadState();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+function renderChat(chat) {
+  const box = $('chatBox');
+  box.replaceChildren();
+  const list = chat?.transcript ?? [];
+  if (!list.length) {
+    const h = document.createElement('div');
+    h.className = 'hint';
+    h.textContent = '대화 내용이 여기에 표시됩니다.';
+    box.append(h);
+  } else {
+    for (const m of list) {
+      const div = document.createElement('div');
+      div.className = `msg ${m.role}`;
+      div.textContent = m.text;
+      box.append(div);
+    }
+  }
+  box.scrollTop = box.scrollHeight;
+  if (chat?.state) {
+    $('chatStateBadge').textContent = chat.handed_off ? `${chat.state} (사장님 이관)` : chat.state;
+    $('endChatBtn').disabled = Boolean(chat.ended);
+  }
+  if (chat?.card) {
+    $('cardBox').hidden = false;
+    $('cardBox').textContent = `요약 카드: [${chat.card.heat_label}] ${chat.card.title} — 요구사항: ${chat.card.demands.join(', ') || '-'}`;
+  }
+}
+
+$('qText').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    $('inquiryForm').requestSubmit();
+  }
+});
+
+$('inquiryForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.currentTarget;
+  if (!form.reportValidity()) return;
+  const btn = $('inquirySubmitBtn');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/inquiries', {
+      method: 'POST',
+      body: JSON.stringify({
+        chatId,
+        platform: lastOrderRef?.platform ?? null,
+        orderNo: $('qOrderNo').value.trim() || null,
+        customerName: $('qName').value.trim(),
+        question: $('qText').value.trim(),
+      }),
+    });
+    if (!res.ok) throw new Error(res.chat?.error?.message || `MAWD 응답 오류 (${res.status})`);
+    renderChat(res.chat);
+    $('qText').value = '';
+    toast('MAWD AI가 문의에 응답했습니다.');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('newChatBtn').onclick = () => {
+  chatId = 'commerce-demo-' + Date.now();
+  $('cardBox').hidden = true;
+  $('endChatBtn').disabled = true;
+  $('chatStateBadge').textContent = '대기';
+  renderChat({ transcript: [] });
+  toast('새 고객 대화방을 시작했습니다.');
+};
+
+$('endChatBtn').onclick = async () => {
+  try {
+    const res = await api(`/api/inquiries/${encodeURIComponent(chatId)}/end`, { method: 'POST', body: '{}' });
+    if (!res.ok) throw new Error(res.chat?.error?.message || '대화 종료 실패');
+    renderChat(res.chat);
+    toast('요약 카드를 생성했습니다.');
+  } catch (err) {
+    toast(err.message);
+  }
+};
+
+$('connectBtn').onclick = async () => {
+  $('connectBtn').disabled = true;
+  try {
+    const res = await api('/api/mawd/connect', { method: 'POST', body: '{}' });
+    if (!res.ok) {
+      const errMsg = res.naver?.connect?.data?.error?.message || res.coupang?.connect?.data?.error?.message || '연결 실패 (MAWD 서버 · SECRETS_KEY 확인)';
+      throw new Error(errMsg);
+    }
+    $('syncBadge').className = 'pill ok';
+    $('syncBadge').textContent = 'MAWD API 연결 + 동기화 완료';
+    toast('네이버 · 쿠팡 더미 API 연결 및 동기화 완료!');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    $('connectBtn').disabled = false;
+  }
+};
+
+$('syncBtn').onclick = async () => {
+  $('syncBtn').disabled = true;
+  try {
+    const res = await api('/api/mawd/sync', { method: 'POST', body: '{}' });
+    if (!res.naver?.ok && !res.coupang?.ok) throw new Error('동기화 실패 (먼저 1클릭 연결을 눌러 주세요)');
+    $('syncBadge').className = 'pill ok';
+    $('syncBadge').textContent = 'MAWD 동기화됨';
+    toast('MAWD 서버와 주문을 동기화했습니다.');
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    $('syncBtn').disabled = false;
+  }
+};
+
+$('resetBtn').onclick = async () => {
+  await api('/api/orders/reset', { method: 'POST', body: '{}' });
+  toast('초기 주문 데이터로 되돌렸습니다.');
+  await loadState();
+};
+
+loadState().catch((e) => toast(e.message));
+</script>
+</body>
+</html>

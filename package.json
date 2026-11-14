@@ -3,9 +3,11 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @mawd/api dev",
+    "dev:commerce": "pnpm --filter @mawd/mock-commerce dev",
     "test": "pnpm --filter @mawd/api test",
     "typecheck": "pnpm -r typecheck",
     "start": "pnpm --filter @mawd/api start",
+    "start:commerce": "pnpm --filter @mawd/mock-commerce start",
     "migrate": "pnpm --filter @mawd/api migrate",
     "seed": "pnpm --filter @mawd/api seed"
   },
