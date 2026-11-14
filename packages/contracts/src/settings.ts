@@ -137,6 +137,7 @@ export const Voice = z.object({
     voice_id: z.string().min(1).max(100).describe('azure: ko-KR-SunHiNeural(여) · ko-KR-SeoHyeonNeural(여) · ko-KR-InJoonNeural(남) 등 / 11labs: 보이스 ID / openai: alloy · echo · fable · nova · onyx · shimmer · marin · cedar'),
     model: z.string().max(60).nullable().describe('11labs만: eleven_flash_v2_5(빠름, 기본) · eleven_multilingual_v2(품질) 등. 나머지는 null'),
   }).describe('Vapi 통화의 목소리 (voice.tts.rate가 속도로 적용)'),
+  noise_suppression: z.enum(['off', 'standard', 'strong']).describe('외부 소음 억제 (Vapi 통화). standard=Krisp(차 소리 · 키보드 · 바람 등), strong=Krisp + 배경 음성 · TV 소리 필터(실험적, 작은 목소리가 잘릴 수 있음)'),
   silence_ms: z.number().int().min(300).max(3000).describe('이만큼 조용하면 고객 발화 종료로 판단 (Vapi: 문장부호 없이 끝났을 때 대기, 짧으면 숨 고르는 사이에 끊김. 기본 1200)'),
   filler: z.object({ enabled: z.boolean(), phrases: z.array(z.string().min(1)).max(20) }),
   barge_in: z.boolean().describe('AI가 말하는 중 고객이 말하면 즉시 멈춤'),

@@ -49,6 +49,13 @@ export function vapiAssistantConfig(cfg: TenantConfig, o: { baseUrl: string; web
         onNumberSeconds: Math.min(3, Math.max(1, v.silence_ms / 1000)), // 주문번호 · 전화번호를 끊어 부르는 동안 기다림
       },
     },
+    ...(v.noise_suppression === 'off' ? {} : {
+      backgroundSpeechDenoisingPlan: {
+        smartDenoisingPlan: { enabled: true },
+        // 배경 음성 · TV처럼 일정하게 깔리는 소리를 걸러냄 (Vapi 실험 기능)
+        ...(v.noise_suppression === 'strong' ? { fourierDenoisingPlan: { enabled: true, mediaDetectionEnabled: true } } : {}),
+      },
+    }),
     // 끼어들기를 끈 매장은 고객이 꽤 길게(10단어) 말해야 멈춤 (Vapi에 완전히 끄는 옵션은 없음)
     stopSpeakingPlan: { numWords: v.barge_in ? 0 : 10 },
     maxDurationSeconds: v.max_call_minutes * 60,
