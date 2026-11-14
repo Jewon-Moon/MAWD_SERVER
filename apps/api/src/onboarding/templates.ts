@@ -18,10 +18,11 @@ const cat = (name: string, description: string, routing: 'auto' | 'approve' | 'i
 export const TEMPLATES: Tpl[] = [
   {
     id: 'online_shop', name: '온라인 쇼핑몰', description: '스마트스토어 · 자사몰 · 쿠팡 등에서 상품을 파는 매장',
-    business: { industry: 'online_shop', industry_detail: '[취급 품목] 온라인 쇼핑몰', description: '[무엇을 파는지 한두 문장으로] 자사몰과 스마트스토어에서 판매합니다.', customers: '[주요 고객층]', service_area: '전국 택배 ([택배사]). 제주 · 도서산간 추가 배송비' },
+    business: { industry: 'online_shop', industry_detail: '[취급 품목] 온라인 쇼핑몰', description: '[무엇을 파는지 한두 문장으로] 자사몰과 스마트스토어에서 판매합니다. 온라인 전용(물류 창고 출고)으로 운영되어 별도의 오프라인 매장은 두고 있지 않으며, 온라인 주문은 24시간 가능합니다.', customers: '[주요 고객층]', service_area: '전국 택배 ([택배사]). 제주 · 도서산간 추가 배송비 (오프라인 매장 없음, 온라인 전용)' },
     offerings: { items: [{ name: '[대표 상품]', kind: 'product', price: '[가격]', description: '[소재 · 사이즈 · 옵션]', available: true }] },
     policies: { shipping: '배송비 [3,000원] ([3만 원] 이상 무료). 평일 오후 [2시] 전 주문은 당일 출고, 배송 1~3일.', returns: '단순 변심 교환 · 반품은 수령 후 7일 이내, 왕복 배송비 고객 부담. 불량 · 오배송은 무료 교환.', refunds: '반품 상품 확인 후 영업일 3일 안에 결제 수단으로 환불.', other: '' },
     faqs: [
+      { question: '운영시간과 오프라인 매장이 있나요?', answer: '별도의 오프라인 매장은 운영하지 않는 온라인 전용(물류 창고 출고) 상점입니다. 온라인 주문은 24시간 가능하며, 고객센터 상담 운영시간은 평일 10:00~19:00(주말·공휴일 휴무)입니다.', enabled: true },
       { question: '배송은 얼마나 걸리나요?', answer: '평일 오후 2시 전 주문은 당일 출고되고, 보통 1~3일 안에 받으실 수 있어요.', enabled: true },
       { question: '교환이나 반품은 어떻게 하나요?', answer: '받으신 날부터 7일 안에 주문번호와 함께 문의 주시면 안내해 드려요. 단순 변심은 왕복 배송비가 있어요.', enabled: true },
     ],

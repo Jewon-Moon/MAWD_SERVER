@@ -7,6 +7,7 @@ import { InquiryDetailPage } from './pages/InquiryDetailPage';
 import { SnsPage } from './pages/SnsPage';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { CustomersPage } from './pages/CustomersPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { DemoPage } from './pages/DemoPage';
 import { TestPage } from './pages/TestPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -60,6 +61,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/channels" element={<RequireAuth><ChannelsPage /></RequireAuth>} />
       <Route path="/customers" element={<RequireAuth><CustomersPage /></RequireAuth>} />
       <Route path="/customers/:id" element={<RequireAuth><CustomersPage /></RequireAuth>} />
+      <Route path="/knowledge" element={<RequireAuth><KnowledgePage /></RequireAuth>} />
       <Route path="/demo" element={<RequireAuth><DemoPage /></RequireAuth>} />
       <Route path="/test" element={<RequireAuth><TestPage /></RequireAuth>} />
 

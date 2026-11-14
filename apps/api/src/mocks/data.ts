@@ -125,7 +125,12 @@ export const defaultTemplates: Row<typeof C.Template>[] = [
 ];
 
 export const defaultFaqs: Row<typeof C.Faq>[] = [
-  { id: 'ffffffff-0000-4000-8000-000000000001', question: '영업시간이 어떻게 되나요?', answer: '평일 10시~19시입니다. 주말과 공휴일은 휴무입니다.', enabled: true },
+  {
+    id: 'ffffffff-0000-4000-8000-000000000001',
+    question: '운영시간과 오프라인 매장이 있나요?',
+    answer: '별도의 오프라인 매장은 운영하지 않는 온라인 전용(물류 창고 출고) 상점입니다. 온라인 주문은 24시간 가능하며, 고객센터 상담 운영시간은 평일 10:00~19:00(주말·공휴일 휴무)입니다.',
+    enabled: true,
+  },
 ];
 
 /** 매장 문서(MD) 기본값: 템플릿 모드 입력값. 저장한 적 없는 매장은 이 값으로 MD를 만들어 씀 (데모 상점 기준) */
@@ -133,9 +138,9 @@ export const defaultContextFields = {
   business: {
     industry: 'online_shop',
     industry_detail: '생활 · 주방용품 온라인 쇼핑몰',
-    description: '머그컵 · 텀블러 · 접시 같은 생활 주방용품을 직접 골라 파는 온라인 쇼핑몰입니다. 자체 사이트와 스마트스토어에서 판매합니다.',
+    description: '머그컵 · 텀블러 · 접시 같은 생활 주방용품을 직접 골라 파는 온라인 쇼핑몰입니다. 자체 사이트와 스마트스토어에서 판매합니다. 온라인 전용(물류 창고 출고)으로 운영되어 별도의 오프라인 매장은 두고 있지 않으며, 온라인 주문은 24시간 가능합니다.',
     customers: '20~30대 1인 가구 · 선물 구매 고객',
-    service_area: '전국 택배 (CJ대한통운). 제주 · 도서산간 3,000원 추가',
+    service_area: '전국 택배 (CJ대한통운). 제주 · 도서산간 3,000원 추가 (오프라인 매장 없음, 온라인 전용)',
   },
   offerings: {
     items: [

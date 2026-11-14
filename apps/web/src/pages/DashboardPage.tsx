@@ -9,6 +9,7 @@ const QUICK_LINKS = [
   { to: '/inquiries', icon: '📋', title: '문의 목록', desc: '답변할 문의와 처리 완료 내역 확인' },
   { to: '/sns', icon: '📷', title: 'SNS 댓글 관리', desc: '인스타그램 악성 댓글 숨김 · 답글 설정' },
   { to: '/channels', icon: '💬', title: '채널 · 연동', desc: '채널톡, 쇼핑몰·배달 플랫폼 연결 관리' },
+  { to: '/knowledge', icon: '📚', title: '매장 지식 (RAG)', desc: 'AI가 참고하는 매장 정보 · 문서 · FAQ 관리' },
   { to: '/demo', icon: '📞', title: '통화 기록', desc: '접수된 고객 통화 요약 및 대화 기록 확인' },
   { to: '/test', icon: '🧪', title: '고객 시연 (전화 · 채팅 테스트)', desc: '실시간 AI 응대와 위험 감지를 직접 체험' },
   { to: '/settings', icon: '⚙️', title: '매장 설정', desc: '응대 정책, 말투, 영업시간, 매장 지식 관리' },

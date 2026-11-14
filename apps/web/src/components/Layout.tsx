@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { id: 'sns', icon: '📷', label: 'SNS', to: '/sns' },
   { id: 'channels', icon: '💬', label: '채널', to: '/channels' },
   { id: 'customers', icon: '👤', label: '고객', to: '/customers' },
+  { id: 'knowledge', icon: '📚', label: '매장 지식', to: '/knowledge' },
   { id: 'settings', icon: '⚙️', label: '설정', to: '/settings' },
   { id: 'demo', icon: '📞', label: '통화 기록', to: '/demo' },
 ] as const;

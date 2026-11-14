@@ -27,11 +27,32 @@ export type TurnDeps = { db: Db; llm: Llm; cfg: TenantConfig; now?: () => Date; 
 const HANDOFF_MARK = '[HANDOFF]';
 const FORMALITY = { formal: '하십시오체', polite: '해요체', casual: '반말' } as const;
 
+/** 요일별 영업시간을 한국어로 간결하게 요약 (예: "월~금 10:00~19:00, 토·일 휴무") */
+export function formatHoursSummary(hours: TenantConfig['settings']['hours']): string {
+  const days: ReadonlyArray<readonly [keyof TenantConfig['settings']['hours']['weekly'], string]> = [
+    ['mon', '월'], ['tue', '화'], ['wed', '수'], ['thu', '목'], ['fri', '금'], ['sat', '토'], ['sun', '일'],
+  ];
+  const groups: { days: string[]; label: string }[] = [];
+  for (const [key, ko] of days) {
+    const ranges = hours.weekly[key] ?? [];
+    const label = ranges.length ? ranges.map((r) => `${r.open}~${r.close}`).join(', ') : '휴무';
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.days.push(ko);
+    else groups.push({ days: [ko], label });
+  }
+  return groups.map(({ days: d, label }) => {
+    const dayStr = d.length >= 3 ? `${d[0]}~${d[d.length - 1]}` : d.join('·');
+    return `${dayStr} ${label}`;
+  }).join(', ');
+}
+
 /** 매장 문서(MD) 블록. brief=요약 카드용 (상품 목록 제외) */
 // 답변에는 매장 소개만 항상 넣고, 상품 · 정책 · FAQ · 올린 문서는 질문에 맞는 것만 [근거]로 (knowledge/rag.ts)
 export function businessContext(cfg: TenantConfig, brief = false): string {
   const c = cfg.context;
-  return (brief ? [c.business, c.policies] : [c.business]).map((m) => m.trim()).filter(Boolean).join('\n\n');
+  const parts = (brief ? [c.business, c.policies] : [c.business]).map((m) => m.trim()).filter(Boolean);
+  parts.push(`- 고객센터(상담) 운영시간: ${formatHoursSummary(cfg.settings.hours)}`);
+  return parts.join('\n\n');
 }
 
 function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: Extract<TurnPlan, { kind: 'llm' }>, grounding: string, orders: unknown[] | null, now: Date): string {
