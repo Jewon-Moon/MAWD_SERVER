@@ -91,33 +91,39 @@ const Store = {
     return this.save(d);
   },
 
+  _pullPromise: null,
   async pullServer() {
-    const [st, inq, sum] = await Promise.all([
-      Api.settings(),
-      Api.inquiries(),
-      Api.dashboardSummary().catch(() => null)
-    ]);
-    const d = this.load();
-    Object.keys(d.store).forEach(sec => {
-      if (st[sec]) d.store[sec] = sec === 'hours' ? this.hoursIn(st.hours) : st[sec];
-    });
-    if (sum) d.serverSummary = sum;
-    const prev = new Map(d.items.map(i => [i.id, i]));
-    const server = inq.items.map((q, i) => {
-      const x = this.fromServer(q, d.settings, inq.items.length - i);
-      const p = prev.get(x.id);    // 화면에서 처리한 표시 · 임시 초안 · 상세 캐시 유지
-      if (!p) return x;
-      const sameVersion = p.updatedAt && p.updatedAt === x.updatedAt;
-      return Object.assign(x, {
-        handled: p.handled || x.handled,
-        reply: p.reply,
-        draft: p.draft,
-        reportedAt: p.reportedAt,
-        detail: sameVersion ? p.detail : null
+    if (this._pullPromise) return this._pullPromise;
+    this._pullPromise = (async () => {
+      const [st, inq, sum] = await Promise.all([
+        Api.settings(),
+        Api.inquiries(),
+        Api.dashboardSummary().catch(() => null)
+      ]);
+      const d = this.load();
+      Object.keys(d.store).forEach(sec => {
+        if (st[sec]) d.store[sec] = sec === 'hours' ? this.hoursIn(st.hours) : st[sec];
       });
-    });
-    d.items = server.concat(d.items.filter(i => i.local));
-    return this.save(d);
+      if (sum) d.serverSummary = sum;
+      const prev = new Map(d.items.map(i => [i.id, i]));
+      const server = inq.items.map((q, i) => {
+        const x = this.fromServer(q, d.settings, inq.items.length - i);
+        const p = prev.get(x.id);    // 화면에서 처리한 표시 · 임시 초안 · 상세 캐시 유지
+        if (!p) return x;
+        const sameVersion = p.updatedAt && p.updatedAt === x.updatedAt;
+        return Object.assign(x, {
+          handled: p.handled || x.handled,
+          reply: p.reply,
+          draft: p.draft,
+          reportedAt: p.reportedAt,
+          detail: sameVersion ? p.detail : null
+        });
+      });
+      d.items = server.concat(d.items.filter(i => i.local));
+      return this.save(d);
+    })();
+    try { return await this._pullPromise; }
+    finally { this._pullPromise = null; }
   },
 
   /* 서버 문의 → 화면용 문의. 점수는 서버 감정 점수, 근거 표현(hits)은 화면 규칙으로 */

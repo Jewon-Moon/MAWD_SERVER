@@ -5,12 +5,20 @@
    ============================================================ */
 'use strict';
 
-/* 폴더가 달라도 링크가 깨지지 않도록 루트 기준으로 만든다 */
-const ROOT = document.body.dataset.root || '';
+/* 폴더가 달라도 SPA pushState 이후에도 링크가 깨지지 않도록 루트 절대 경로로 계산한다 */
+const BASE_PATH = (() => {
+  try {
+    const u = new URL(document.body.dataset.root || './', location.href);
+    return u.pathname.endsWith('/') ? u.pathname : u.pathname + '/';
+  } catch {
+    return '/';
+  }
+})();
+const ROOT = BASE_PATH;
 const L = (() => {
   const m = {};
-  CONFIG.menu.forEach(x => { m[x.id] = ROOT + x.path; });
-  Object.entries(CONFIG.routes).forEach(([k, v]) => { m[k] = ROOT + v; });
+  CONFIG.menu.forEach(x => { m[x.id] = BASE_PATH + x.path; });
+  Object.entries(CONFIG.routes).forEach(([k, v]) => { m[k] = BASE_PATH + v; });
   return m;
 })();
 
@@ -880,6 +888,26 @@ function pushTurn(who, text) {
   if (who === 'ai') call.latency.push(180 + Math.floor(Math.random() * 420));
 }
 
+function updateCallTapeDom() {
+  const tape = $('#tape');
+  if (!tape) return false;
+  const items = call.turns.map(t => `
+    <div class="msg ${t[0] === 'cust' ? 'them' : 'ai'}">
+      <div class="msg-av">${t[0] === 'cust' ? '👤' : '🛡'}</div>
+      <div class="bubble">${esc(t[1])}</div>
+    </div>`).join('')
+    + (call.streaming ? `
+      <div class="msg ai">
+        <div class="msg-av">🛡</div>
+        <div class="bubble">${esc(call.streamText || '답변 생성 중…')}</div>
+      </div>` : '');
+  tape.innerHTML = items || `<div class="ph">${call.on
+    ? '마이크를 켜거나 상황 버튼/입력창으로 고객이 말하게 해보세요.'
+    : '전화 걸기를 누르면 실제 AI 통화가 시작됩니다.'}</div>`;
+  tape.scrollTop = tape.scrollHeight;
+  return true;
+}
+
 function scrollTape() {
   const tape = $('#tape');
   if (tape) tape.scrollTop = tape.scrollHeight;
@@ -999,8 +1027,7 @@ async function sendVoiceTurn(text, scId) {
         }
         call.streamText += (call.streamText ? ' ' : '') + s;
         playTts(s);
-        render();
-        scrollTape();
+        if (!updateCallTapeDom()) { render(); scrollTape(); }
       },
       onMetrics(m) {
         if (m && typeof m.first_sentence_ms === 'number' && !gotFirst) {
@@ -2285,23 +2312,40 @@ async function boot() {
     return;
   }
 
-  try {
-    const me = await Api.me();
-    Store.applyMe(me);
-    if (key === 'onboarding' && !ob.storeName) ob.storeName = me.tenant.name;
-    if (me.setup.done && key !== 'onboarding') {
-      await Store.pullServer().catch(e => toast('서버 데이터를 받지 못했어요. ' + e.message));
+  const cachedOnboarded = !!Store.load().settings.onboarded;
+  if (cachedOnboarded && key !== 'onboarding') {
+    /* 캐시가 있으면 기다리지 않고 0ms 즉시 렌더 후 백그라운드 동기화 */
+    render();
+    reveal();
+    Promise.all([Api.me(), Store.pullServer()])
+      .then(([me]) => {
+        Store.applyMe(me);
+        if (!me.setup.done) { location.replace(L.onboarding); return; }
+        const busy = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+        if (!busy) render();
+      })
+      .catch(e => {
+        if (e && e.status === 401) { Api.setToken(null); location.replace(L.login); }
+      });
+  } else {
+    try {
+      const me = await Api.me();
+      Store.applyMe(me);
+      if (key === 'onboarding' && !ob.storeName) ob.storeName = me.tenant.name;
+      if (me.setup.done && key !== 'onboarding') {
+        await Store.pullServer().catch(e => toast('서버 데이터를 받지 못했어요. ' + e.message));
+      }
+    } catch (e) {
+      if (e.status === 401 || !Store.load().settings.onboarded) {
+        Api.setToken(null);
+        location.replace(L.login);
+        return;
+      }
+      toast('서버에 연결하지 못했어요. 이 브라우저에 저장된 데이터로 보여드려요.');
     }
-  } catch (e) {
-    if (e.status === 401 || !Store.load().settings.onboarded) {
-      Api.setToken(null);
-      location.replace(L.login);
-      return;
-    }
-    toast('서버에 연결하지 못했어요. 이 브라우저에 저장된 데이터로 보여드려요.');
+    render();
+    reveal();
   }
-  render();
-  reveal();
   if (key !== 'onboarding') {
     pollAlertsOnce();
     /* 새 문의·알림 확인 — 입력 중이면 화면을 다시 그리지 않는다 */
@@ -2344,7 +2388,53 @@ const MENU_OF = {
   demo:'demo'
 };
 
-function renderNav(active) {
+const PAGE_TITLES = {
+  dashboard: '현황', inquiries: '문의', channels: '채널',
+  customers: '고객', customer: '고객 상세', demo: '통화 시연',
+  settings: '설정', threshold: '기준 설정', setchannels: '채널 연결',
+  tone: '응답 톤', store: '매장 설정', storehouse: '매장 관리'
+};
+
+function pageKeyFromPath(pathname) {
+  const p = pathname || location.pathname;
+  if (p.includes('auth/login')) return 'login';
+  if (p.includes('onboarding')) return 'onboarding';
+  if (p.includes('inquiries')) return 'inquiries';
+  if (p.includes('settings/threshold')) return 'threshold';
+  if (p.includes('settings/channels')) return 'setchannels';
+  if (p.includes('settings/tone')) return 'tone';
+  if (p.includes('settings/store')) return 'store';
+  if (p.includes('settings/')) return 'settings';
+  if (p.includes('channels')) return 'channels';
+  if (p.includes('customer/detail')) return 'customer';
+  if (p.includes('customer/')) return 'customers';
+  if (p.includes('demo')) return 'demo';
+  if (p.includes('storehouse')) return 'storehouse';
+  return 'dashboard';
+}
+
+function navigateTo(href, push = true) {
+  const url = new URL(href, location.href);
+  if (url.origin !== location.origin) return false;
+  const nextKey = pageKeyFromPath(url.pathname);
+  const curKey = document.body.dataset.page || pageKeyFromPath(location.pathname);
+  if (nextKey === 'login' || nextKey === 'onboarding' || curKey === 'login' || curKey === 'onboarding') return false;
+  if (!$('.app')) return false;
+
+  if (push) history.pushState(null, '', url.pathname + url.search + url.hash);
+  document.body.dataset.page = nextKey;
+  render();
+  window.scrollTo(0, 0);
+  return true;
+}
+
+window.addEventListener('popstate', () => {
+  if (!$('.app')) return;
+  document.body.dataset.page = pageKeyFromPath(location.pathname);
+  render();
+});
+
+function renderNav(active, pageKey) {
   const d = Store.load();
   const held = Store.stats(d).held;
   const biz = bizTypeOf(d.settings.bizType);
@@ -2379,7 +2469,12 @@ function renderNav(active) {
       <span class="tab-ico">${m.icon}</span>${esc(m.label)}
     </a>`).join('');
 
-  /* 상단 알림 뱃지 */
+  /* 상단 제목 · 알림 뱃지 */
+  const titleEl = $('#pageTitle'), subEl = $('#pageSub');
+  const titleTxt = PAGE_TITLES[pageKey || active] || CONFIG.brand.name;
+  if (titleEl) titleEl.textContent = titleTxt;
+  if (subEl) subEl.textContent = storeName;
+  document.title = `${titleTxt} — ${CONFIG.brand.name}`;
   const pip = $('.icon-btn .pip');
   if (pip) pip.style.display = held ? '' : 'none';
 }
@@ -2428,7 +2523,7 @@ function render() {
       host.innerHTML = PAGES[key]();
     }
   }
-  renderNav(MENU_OF[key] || key);
+  renderNav(MENU_OF[key] || key, key);
   syncSettings();
 }
 
@@ -2445,6 +2540,15 @@ function storeFieldCoerce(type, el) {
 
 /* 1. 클릭 이벤트 */
 document.addEventListener('click', async (e) => {
+  /* 동적 SPA 네비게이션 (같은 앱 내부 페이지 이동 시 풀 리로드 없이 즉시 전환) */
+  const navLink = e.target.closest('a[href]');
+  if (navLink && !navLink.target && !navLink.hasAttribute('download')
+      && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+    const href = navLink.getAttribute('href') || '';
+    if (href && !href.startsWith('#') && !href.startsWith('http://') && !href.startsWith('https://')) {
+      if (navigateTo(navLink.href, true)) { e.preventDefault(); return; }
+    }
+  }
   /* 통화/채팅 탭 전환 */
   const tab = e.target.closest('[data-tab]');
   if (tab) { call.tab = tab.dataset.tab; render(); return; }
