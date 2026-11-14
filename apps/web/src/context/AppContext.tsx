@@ -564,6 +564,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       });
 
+      const topKey = parts[0];
+      const currentSection = (data.store[section as keyof typeof data.store] ?? {}) as Record<string, unknown>;
+      const serverPatch =
+        parts.length > 1 && currentSection[topKey] && typeof currentSection[topKey] === 'object' && !Array.isArray(currentSection[topKey])
+          ? { [topKey]: deepMerge(currentSection[topKey] as Record<string, unknown>, patchBody[topKey] as Record<string, unknown>) }
+          : patchBody;
+
       updateData((prev) => ({
         ...prev,
         store: deepMerge(prev.store, { [section]: patchBody }),
@@ -571,7 +578,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (Api.token()) {
         try {
-          const res = await Api.patchSettings(section, patchBody);
+          const res = await Api.patchSettings(section, serverPatch);
           if (res?.settings) {
             updateData((prev) => ({ ...prev, store: deepMerge(prev.store, res.settings) }));
           }
@@ -583,7 +590,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showToast('로컬에 저장되었습니다');
       }
     },
-    [showToast, updateData]
+    [data.store, showToast, updateData]
   );
 
   const resetStoreSection = useCallback(
