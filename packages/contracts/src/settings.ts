@@ -177,6 +177,14 @@ export const IssueDetection = z.object({
   // 발송 전 사장님 확인은 끌 수 없음 (스펙 F8 AC)
 });
 
+/** 인스타그램 댓글 대응 (F11). 연결은 /instagram/connection, 여기서는 반응 방식만 */
+export const InstagramSettings = z.object({
+  enabled: z.boolean().describe('연결된 인스타 계정의 댓글을 AI가 처리'),
+  auto_hide: z.enum(['off', 'abusive', 'abusive_or_heated']).describe('자동 숨김: off=안 함, abusive=욕설 · 비하만, abusive_or_heated=욕설 또는 감정 점수가 hide_heat_gte 이상'),
+  hide_heat_gte: z.number().int().min(0).max(100).describe('abusive_or_heated일 때 이 점수 이상이면 숨김'),
+  auto_reply: z.boolean().describe('일반 문의 댓글에 AI가 공개 답글 (매장 지식 근거, 판단이 필요하거나 격앙된 댓글은 답하지 않음)'),
+});
+
 export const SettingsSections = {
   response: ResponsePolicy,
   persona: Persona,
@@ -186,6 +194,7 @@ export const SettingsSections = {
   ai: AiSettings,
   'data-access': DataAccess,
   issues: IssueDetection,
+  instagram: InstagramSettings,
 } as const;
 export type SettingsSection = keyof typeof SettingsSections;
 export const AllSettings = z.object(SettingsSections);

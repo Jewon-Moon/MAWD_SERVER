@@ -181,3 +181,11 @@ export const contextDocs = pgTable('context_docs', {
   markdown: text('markdown').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.tenantId, t.kind] })]);
+
+// drizzle/0006_instagram.sql
+export const instagramAccounts = pgTable('instagram_accounts', {
+  tenantId: uuid('tenant_id').primaryKey(),
+  igUserId: text('ig_user_id').notNull(),
+  username: text('username'),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -27,6 +27,10 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     const [row] = await client<{ t: string | null }[]>`SELECT tenant_for_user(${userId}) AS t`;
     return row?.t ?? null;
   }
+  async function tenantForInstagram(igUserId: string): Promise<string | null> {
+    const [row] = await client<{ t: string | null }[]>`SELECT tenant_for_instagram(${igUserId}) AS t`;
+    return row?.t ?? null;
+  }
   async function tenantForWebhook(token: string): Promise<string | null> {
     const [row] = await client<{ t: string | null }[]>`SELECT tenant_for_webhook(${token}) AS t`;
     return row?.t ?? null;
@@ -38,5 +42,5 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     return rows.map((r) => r.t);
   }
 
-  return { withTenant, tenantForUser, tenantForWebhook, tenantsWithConnections, close: () => client.end() };
+  return { withTenant, tenantForUser, tenantForWebhook, tenantForInstagram, tenantsWithConnections, close: () => client.end() };
 }

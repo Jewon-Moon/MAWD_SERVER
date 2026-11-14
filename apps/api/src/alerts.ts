@@ -38,14 +38,14 @@ export function styleFor(cfg: TenantConfig, priority: Priority, now: Date) {
 }
 
 export type AlertInput = {
-  tenantId: string; inquiryId: string | null; channel: 'call' | 'chat'; kind: 'live' | 'card';
+  tenantId: string; inquiryId: string | null; channel: 'call' | 'chat' | 'sns'; kind: 'live' | 'card';
   heat: number; riskFlags: string[]; needsOwner: boolean; title: string; message: string;
 };
 export type AlertCenter = ReturnType<typeof createAlertCenter>;
 type Log = { error: (o: object, m: string) => void };
 
 const toOut = (r: typeof s.alerts.$inferSelect): AlertOut => ({
-  id: r.id, inquiry_id: r.inquiryId, channel: r.channel === 'sns' ? 'chat' : r.channel, kind: r.kind, priority: r.priority, heat: r.heat,
+  id: r.id, inquiry_id: r.inquiryId, channel: r.channel, kind: r.kind, priority: r.priority, heat: r.heat,
   title: r.title, message: r.message, display: r.display, sound: r.sound, acked: !!r.ackedAt, created_at: r.createdAt.toISOString(),
 });
 
