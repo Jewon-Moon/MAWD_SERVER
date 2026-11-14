@@ -57,13 +57,29 @@ export function buildMockCommerceApp(opts: {
     done(null, Object.fromEntries(new URLSearchParams(String(body))));
   });
 
+  // MAWD API는 로그인이 필요해서 데모 계정으로 로그인한 토큰(Bearer)을 씀. 만료 · 401이면 한 번 다시 로그인
+  const demoEmail = process.env.MAWD_DEMO_EMAIL?.trim() || process.env.DEMO_EMAIL?.trim() || 'demo@mawd.app';
+  const demoPassword = process.env.MAWD_DEMO_PASSWORD?.trim() || process.env.DEMO_PASSWORD?.trim() || 'mawd-demo-1234';
+  let mawdToken: string | null = null;
+  async function login(): Promise<string | null> {
+    const res = await fetchFn(`${mawdBase}/v1/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ email: demoEmail, password: demoPassword }),
+    });
+    mawdToken = res.ok ? ((await res.json()) as { token?: string }).token ?? null : null;
+    return mawdToken;
+  }
+
   async function callMawd(path: string, init: RequestInit = {}) {
     try {
-      const res = await fetchFn(`${mawdBase}${path}`, {
+      const send = async () => fetchFn(`${mawdBase}${path}`, {
         ...init,
         signal: AbortSignal.timeout(15_000),
-        headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.headers },
+        headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(mawdToken ? { authorization: `Bearer ${mawdToken}` } : {}), ...init.headers },
       });
+      if (!mawdToken) await login().catch(() => null);
+      let res = await send();
+      if (res.status === 401 && (await login().catch(() => null))) res = await send();
       const text = await res.text();
       let data: unknown = null;
       try { data = text ? JSON.parse(text) : null; } catch { data = text; }

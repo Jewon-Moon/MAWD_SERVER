@@ -137,7 +137,7 @@
 <header>
   <div>
     <h1>감정 방패 테스트 콘솔</h1>
-    <div class="note">프론트 완성 전 기능 확인용 임시 화면 · 데모 상점 1곳 기준 · 설정은 서버 재시작 시 기본값으로</div>
+    <div class="note">프론트 완성 전 기능 확인용 임시 화면 · 로그인한 매장 기준 · 설정은 DB에 저장 <span id="who"></span></div>
   </div>
   <nav role="tablist" aria-label="화면">
     <button role="tab" data-tab="call" aria-selected="true">통화 · 채팅</button>
@@ -152,12 +152,23 @@
   </nav>
   <label class="soundtoggle"><input type="checkbox" id="soundOn"> 알림음</label>
   <button class="bell" id="bell" aria-label="확인 안 한 알림"><span aria-hidden="true">🔔</span><span class="cnt" id="bellCnt" hidden>0</span></button>
+  <button id="logoutBtn" hidden>로그아웃</button>
 </header>
+<div id="loginGate" hidden style="position:fixed;inset:0;z-index:20;background:var(--bg);display:grid;place-items:center;padding:16px">
+  <form class="panel" id="loginForm" style="width:min(360px,100%);display:grid;gap:12px">
+    <h2>로그인</h2>
+    <p class="sub" style="margin:0">매장 계정으로 로그인하세요. 시연은 데모 계정(demo@mawd.app)으로.</p>
+    <label>이메일 <input type="email" id="loginEmail" autocomplete="username" value="demo@mawd.app" required></label>
+    <label>비밀번호 <input type="password" id="loginPw" autocomplete="current-password" required></label>
+    <div class="sub" id="loginErr" role="alert" style="margin:0;color:var(--danger)"></div>
+    <button class="primary" type="submit">로그인</button>
+  </form>
+</div>
 
 <div id="banners" aria-live="assertive"></div>
 <main>
   <section data-pane="call">
-    <iframe src="/demo" title="통화 · 채팅 데모" allow="microphone; autoplay"></iframe>
+    <iframe data-src="/demo" title="통화 · 채팅 데모" allow="microphone; autoplay"></iframe>
   </section>
 
   <section data-pane="commerce" hidden>
@@ -780,12 +791,31 @@ $('pushEnable').onclick = async () => {
 loaders.alerts = async () => { allAlerts = (await api('/alerts?limit=200')).items; renderAlerts(); loadPush().catch((e) => toast(e.message, true)); };
 document.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => api('/alerts/test', { method: 'POST', body: { priority: b.dataset.test } }).then(pollAlerts).catch((e) => toast(e.message, true)); });
 $('bell').onclick = () => showTab('alerts');
-api('/alerts?limit=200').then((r) => { allAlerts = r.items; renderAlerts(); }).catch(() => {});
-setInterval(pollAlerts, 2000);
 
-let start = 'call';
-try { start = localStorage.getItem('console-tab') || 'call'; } catch {}
-showTab(document.querySelector(`[data-tab="${start}"]`) ? start : 'call');
+// ---------- 로그인 ----------
+// 쿠키로 로그인 상태 유지. 로그인하면 같은 쿠키로 아래 통화 · 채팅 데모(iframe)도 그 매장으로 동작
+let polling = null;
+async function boot() {
+  const me = await fetch(API + '/me').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (!me) { $('loginGate').hidden = false; $('loginPw').focus(); return; }
+  $('loginGate').hidden = true;
+  $('who').textContent = `· ${me.tenant.name} (${me.user.email})`;
+  $('logoutBtn').hidden = false;
+  const f = document.querySelector('iframe[data-src]');
+  if (f && !f.getAttribute('src')) f.src = f.dataset.src;
+  api('/alerts?limit=200').then((r) => { allAlerts = r.items; renderAlerts(); }).catch(() => {});
+  polling ??= setInterval(pollAlerts, 2000);
+  let start = 'call';
+  try { start = localStorage.getItem('console-tab') || 'call'; } catch {}
+  showTab(document.querySelector(`[data-tab="${start}"]`) ? start : 'call');
+}
+$('loginForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('loginErr').textContent = '';
+  try { await api('/auth/login', { method: 'POST', body: { email: $('loginEmail').value, password: $('loginPw').value } }); boot(); }
+  catch (err) { $('loginErr').textContent = err.message; }
+};
+$('logoutBtn').onclick = async () => { await api('/auth/logout', { method: 'POST' }).catch(() => {}); location.reload(); };
 
 // ---------- 판매처 연동 · 주문 ----------
 async function loadCommerce() {
@@ -883,6 +913,7 @@ $('csvImport').onclick = () => runCsv(false);
 $('orderReload').onclick = () => loadOrders().catch((e) => toast(e.message, true));
 $('orderSourceFilter').onchange = () => loadOrders().catch((e) => toast(e.message, true));
 loaders.commerce = loadCommerce;
+boot(); // 모든 화면 코드가 준비된 뒤 로그인 확인
 </script>
 </body>
 </html>

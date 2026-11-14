@@ -189,3 +189,17 @@ export const instagramAccounts = pgTable('instagram_accounts', {
   username: text('username'),
   connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// drizzle/0007_auth.sql (전역: 매장 정하기 전 인증용)
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: createdAt(),
+});
+export const sessions = pgTable('sessions', {
+  tokenHash: text('token_hash').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+});

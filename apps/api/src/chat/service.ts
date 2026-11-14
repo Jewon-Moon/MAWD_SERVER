@@ -9,7 +9,7 @@ import * as s from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import type { ChatSender, IncomingMessage } from '../integrations/channeltalk.js';
 import type { Llm } from '../integrations/llm.js';
-import { getTenantConfig } from '../tenantConfig.js';
+import { getTenantConfig, loadConfig } from '../tenantConfig.js';
 import { newVerifyState } from '../tools/orders.js';
 import type { CallSession } from '../voice/policy.js';
 import type { AlertCenter } from '../alerts.js';
@@ -104,6 +104,7 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
   return {
     /** 웹훅에서 호출. 응답은 기다리지 않아도 됨 (채널톡 웹훅은 빨리 200을 받아야 함) */
     async handle(tenantId: string, msg: IncomingMessage): Promise<void> {
+      await loadConfig(deps.db, tenantId); // 웹훅은 로그인 없이 와서 매장 설정을 여기서 읽음
       const { response } = getTenantConfig(tenantId).settings;
       if (!response.ai_enabled || !response.channels.chat) return; // AI 꺼진 매장: 사장님이 채널톡에서 직접 응대
       const k = key(tenantId, msg.chatId);

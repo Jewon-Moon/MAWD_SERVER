@@ -1,4 +1,5 @@
 // 실시간 통화 API (F9). 프론트는 브라우저 음성 인식 결과 텍스트를 턴마다 보내고, SSE로 문장을 받아 바로 읽습니다.
+import { tenantOf } from '../auth.js';
 import { randomUUID } from 'node:crypto';
 import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -13,7 +14,6 @@ import type { CommerceService } from '../commerce/service.js';
 import { ApiError, notFound } from '../errors.js';
 import type { Llm } from '../integrations/llm.js';
 import type { Tts } from '../integrations/tts.js';
-import { TENANT_ID } from '../mocks/data.js';
 import { getTenantConfig } from '../tenantConfig.js';
 import { renderTemplate, type CallSession } from '../voice/policy.js';
 import { finalizeInquiry, runTurn, startCallSession } from '../voice/turn.js';
@@ -25,13 +25,11 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
   // shortcut: 통화 세션을 프로세스 메모리에 둠 (서버 1대 기준). 여러 대로 늘리면 Redis/DB로 옮기고 스티키 라우팅
   const sessions = new Map<string, CallSession & { card: z.infer<typeof C.Card> | null }>();
   const get = (id: string) => sessions.get(id) ?? notFound('call_not_found');
-  // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
-  const tenantOf = () => TENANT_ID;
   const ttsOpts = (v: C.AllSettings['voice']) => ({ voice: v.tts.voice_name ?? 'coral', speed: v.tts.rate, instructions: v.tts.instructions });
 
   return async (app) => {
-    app.post('/calls', { schema: { tags: ['calls'], response: { 200: C.CallStart } } }, async () => {
-      const tenantId = tenantOf();
+    app.post('/calls', { schema: { tags: ['calls'], response: { 200: C.CallStart } } }, async (req) => {
+      const tenantId = tenantOf(req);
       const cfg = getTenantConfig(tenantId);
       const { voice } = cfg.settings;
       const id = randomUUID();
@@ -53,7 +51,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
     app.post('/tts', {
       schema: { tags: ['calls'], body: z.object({ text: z.string().min(1).max(500) }), response: { 200: z.object({ id: z.string().uuid(), url: z.string() }) }, description: '매장 음성 설정(voice.tts)으로 읽을 문장 등록. 받은 url을 <audio src>에 넣으면 wav를 스트리밍 재생. sentence 이벤트마다 바로 등록하면 앞 문장 재생 중에 다음 문장이 준비됨' },
     }, async (req) => {
-      const tenantId = tenantOf();
+      const tenantId = tenantOf(req);
       if (getTenantConfig(tenantId).settings.voice.tts.engine === 'browser') throw new ApiError(409, 'tts_engine_browser', '이 매장은 브라우저 음성을 씁니다.');
       if (deps.tts.configured === false) throw new ApiError(409, 'tts_not_configured', '서버 음성 합성 키(TTS_API_KEY)가 없어 브라우저 음성으로 대체합니다.');
       const id = randomUUID();

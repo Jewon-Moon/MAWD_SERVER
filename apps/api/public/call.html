@@ -221,7 +221,10 @@ let settings = null, call = null, ended = false, callStart = 0, timerId = null;
 
 // ---------- 매장 설정 ----------
 async function loadSettings() {
-  settings = await (await fetch(`${API}/settings`)).json();
+  const res = await fetch(`${API}/settings`);
+  // 로그인이 필요함 → 콘솔 로그인 화면으로 (콘솔 안에서 열리면 같은 쿠키라 바로 통과)
+  if (res.status === 401) { (window.top ?? window).location.href = '/console'; throw new Error('로그인이 필요해요'); }
+  settings = await res.json();
   $('sName').value = settings.persona.assistant_name;
   $('sFormality').value = settings.persona.formality;
   $('sHeat').value = settings.response.heat_threshold;

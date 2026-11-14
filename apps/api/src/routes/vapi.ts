@@ -1,6 +1,7 @@
 // Vapi 음성 통화. Vapi가 듣고 말하고, 답변은 Custom LLM 주소로 우리 서버에서 받음 (상태 머신 · 안전장치는 브라우저 통화와 같은 runTurn)
 //   Vapi → POST /v1/vapi/{매장 webhook_token}/chat/completions   (OpenAI 호환 SSE)
 //   Vapi → POST /v1/vapi/{매장 webhook_token}/events             (통화 종료 보고 → 요약 카드)
+import { tenantOf } from '../auth.js';
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
@@ -18,8 +19,7 @@ import type { CommerceService } from '../commerce/service.js';
 import { ApiError, notFound } from '../errors.js';
 import type { Llm } from '../integrations/llm.js';
 import { SECRET_HEADER, vapiAssistantConfig, type VapiClient } from '../integrations/vapi.js';
-import { TENANT_ID } from '../mocks/data.js';
-import { getTenantConfig } from '../tenantConfig.js';
+import { getTenantConfig, loadConfig } from '../tenantConfig.js';
 import type { CallSession } from '../voice/policy.js';
 import { finalizeInquiry, runTurn, startCallSession } from '../voice/turn.js';
 
@@ -43,13 +43,12 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
   const sessions = new Map<string, Sess>(); // Vapi call id → 세션
   // shortcut: 매장별 어시스턴트 id를 메모리에 (처음엔 VAPI_ASSISTANT_ID). 여러 매장이면 tenants 테이블 컬럼으로
   const assistantIds = new Map<string, string>();
-  // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
-  const tenantOf = () => TENANT_ID;
 
   const tenantFor = async (req: FastifyRequest<{ Params: { token: string } }>) => {
     const tenantId = (await deps.db.tenantForWebhook(req.params.token)) ?? notFound('webhook_not_found');
     const secret = env.VAPI_SERVER_SECRET;
     if (secret && !safeEq(String(req.headers[SECRET_HEADER] ?? ''), secret)) throw new ApiError(401, 'invalid_vapi_secret', 'Vapi 요청 확인 값이 맞지 않습니다.');
+    await loadConfig(deps.db, tenantId); // 로그인 없이 오는 웹훅: 매장 설정을 여기서 읽음
     return tenantId;
   };
 
@@ -138,16 +137,16 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
     // ---- 데모 화면용 ----
     app.get('/vapi/config', {
       schema: { tags: ['vapi'], response: { 200: z.object({ enabled: z.boolean(), public_key: z.string().nullable(), assistant_id: z.string().nullable() }) }, description: '브라우저에서 Vapi 웹 SDK를 쓸 수 있는지. enabled=false면 기존 브라우저 통화로' },
-    }, async () => {
-      const t = tenantOf();
+    }, async (req) => {
+      const t = tenantOf(req);
       const enabled = deps.vapi.configured && getTenantConfig(t).settings.voice.tts.engine === 'vapi';
       return { enabled, public_key: enabled ? deps.vapi.publicKey : null, assistant_id: assistantIds.get(t) ?? (env.VAPI_ASSISTANT_ID || null) };
     });
 
     app.post('/vapi/assistant/sync', {
       schema: { tags: ['vapi'], response: { 200: z.object({ assistant_id: z.string() }) }, description: '매장 설정(음성 · 말 끝 감지 · 끼어들기 · 최대 통화 시간)으로 Vapi 어시스턴트를 만들거나 갱신. 통화 시작 전에 호출. 키 없으면 409 vapi_not_configured' },
-    }, async () => {
-      const t = tenantOf();
+    }, async (req) => {
+      const t = tenantOf(req);
       if (!deps.vapi.configured) throw new ApiError(409, 'vapi_not_configured', 'VAPI_PRIVATE_KEY · VAPI_PUBLIC_KEY · PUBLIC_BASE_URL이 필요합니다.');
       const [row] = await deps.db.withTenant(t, (tx) => tx.select({ token: s.tenants.webhookToken }).from(s.tenants).where(eq(s.tenants.id, t)));
       const body = vapiAssistantConfig(getTenantConfig(t), { baseUrl: env.PUBLIC_BASE_URL!, webhookToken: row?.token ?? notFound('tenant_not_found'), secret: env.VAPI_SERVER_SECRET, tenantId: t });
@@ -156,12 +155,12 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
       return { assistant_id: assistantId };
     });
 
-    const mine = (callId: string) => {
+    const mine = (callId: string, tenantId: string) => {
       const sess = sessions.get(callId);
-      return sess && sess.tenantId === tenantOf() ? sess : notFound('call_not_found');
+      return sess && sess.tenantId === tenantId ? sess : notFound('call_not_found');
     };
     app.get('/vapi/calls/:callId', { schema: { tags: ['vapi'], params: callIdParam, response: { 200: VapiCallDetail }, description: 'Vapi 통화 상태 · 전사 · 요약 카드 (데모 화면 폴링용, callId는 Vapi call id)' } }, async (req) => {
-      const sess = mine(req.params.callId);
+      const sess = mine(req.params.callId, tenantOf(req));
       return {
         call_id: sess.id, inquiry_id: sess.inquiryId, state: sess.state, ended: sess.ended,
         transcript: sess.history.map((m) => ({ role: m.role === 'user' ? 'customer' as const : 'ai' as const, text: m.content })),
@@ -169,7 +168,7 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
       };
     });
     app.post('/vapi/calls/:callId/end', { schema: { tags: ['vapi'], params: callIdParam, response: { 200: z.object({ inquiry_id: z.string().uuid() }) }, description: '데모: 화면에서 끊은 직후 카드 생성 시작 (Vapi 종료 보고를 기다리지 않음, 중복 호출 무시)' } }, async (req) => {
-      const sess = mine(req.params.callId);
+      const sess = mine(req.params.callId, tenantOf(req));
       finalize(sess, req.log);
       return { inquiry_id: sess.inquiryId };
     });

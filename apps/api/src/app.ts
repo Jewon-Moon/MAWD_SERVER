@@ -6,6 +6,10 @@ import swaggerUi from '@fastify/swagger-ui';
 import { jsonSchemaTransform, serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import { registerErrorHandler } from './errors.js';
 import { mockRoutes } from './routes/mock.js';
+import { createAuth, type AuthInfo } from './auth.js';
+import { accountRoutes } from './routes/account.js';
+import { TENANT_ID } from './mocks/data.js';
+import { loadConfig } from './tenantConfig.js';
 import { settingsRoutes } from './routes/settings.js';
 import { callRoutes } from './routes/calls.js';
 import { createDb } from './db/client.js';
@@ -64,11 +68,24 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
     return reply.type('application/javascript').header('service-worker-allowed', '/').header('cache-control', 'no-cache').send(body);
   });
 
-  await app.register(mockRoutes, { prefix: '/v1' });
-  await app.register(settingsRoutes, { prefix: '/v1' });
   // DB · LLM은 테스트에서 바꿔 끼울 수 있게 주입. 없으면 환경변수로 생성 (DB 연결은 첫 쿼리 때 맺어짐)
   const db = opts.db ?? createDb();
   app.addHook('onClose', async () => { if (!opts.db) await db.close(); });
+
+  // 로그인: /v1 요청마다 쿠키 · Bearer → 매장. 매장 설정은 처음 한 번 DB에서 읽어 둠 (AI 파이프라인이 동기로 읽음)
+  const auth = createAuth({ db });
+  app.decorateRequest('auth', null);
+  app.addHook('onRequest', async (req) => {
+    if (!req.url.startsWith('/v1/')) return;
+    const a = await auth.resolve(req).catch(() => null);
+    (req as unknown as { auth: AuthInfo | null }).auth = a;
+    const tenantId = a?.tenantId ?? (process.env.DEV_ANON_TENANT === '1' ? TENANT_ID : null);
+    if (tenantId) await loadConfig(db, tenantId).catch((err) => req.log.error({ err }, 'load tenant config failed'));
+  });
+  const context = createContextStore(db);
+  await app.register(accountRoutes({ db, auth, context }), { prefix: '/v1' });
+  await app.register(mockRoutes, { prefix: '/v1' });
+  await app.register(settingsRoutes({ db }), { prefix: '/v1' });
   const llm = opts.llm ?? createLlm();
   const bivia = opts.bivia ?? createBivia();
   const rag = createRag({ db, embedder: opts.embedder ?? createEmbedder() });
@@ -81,7 +98,6 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   const push = opts.push ?? createFcm(process.env, fetch, (m) => app.log.info(m));
   const alerts = opts.alerts ?? createAlertCenter({ db, push, log: app.log, publicUrl: process.env.PUBLIC_BASE_URL || undefined });
   await app.register(alertRoutes({ db, alerts }), { prefix: '/v1' });
-  const context = createContextStore(db);
   await app.register(contextRoutes({ context }), { prefix: '/v1' });
   await app.register(documentRoutes({ db }), { prefix: '/v1' });
   await app.register(commerceRoutes({ commerce }), { prefix: '/v1' });

@@ -13,11 +13,7 @@ const ok = z.object({ ok: z.literal(true) });
 const now = () => new Date().toISOString();
 
 export const mockRoutes: FastifyPluginAsyncZod = async (app) => {
-  // auth
-  app.post('/auth/signup', { schema: { tags: ['auth'], body: C.SignupBody, response: { 200: C.Me } } }, async () => M.me);
-  app.post('/auth/login', { schema: { tags: ['auth'], body: C.LoginBody, response: { 200: C.Me } } }, async () => M.me);
-  app.post('/auth/logout', { schema: { tags: ['auth'], response: { 200: ok } } }, async () => ({ ok: true as const }));
-  app.get('/me', { schema: { tags: ['auth'], response: { 200: C.Me } } }, async () => M.me);
+  // 회원가입 · 로그인 · /me 는 routes/account.ts (실제 구현)
 
   // integrations / settings
   app.put('/integrations/channeltalk', { schema: { tags: ['settings'], body: C.ChannelTalkKeys, response: { 200: C.IntegrationResult } } },

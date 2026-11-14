@@ -37,6 +37,16 @@ export const Me = z.object({
   tenant: z.object({ id, name: z.string() }),
   integrations: z.object({ channeltalk: z.boolean(), stibee: z.boolean() }),
   onboarding: z.object({ channeltalk: z.boolean(), documents: z.boolean(), test_message: z.boolean() }),
+  setup: z.object({ done: z.boolean(), template: z.string().nullable() }).describe('초기 세팅(업종 템플릿) 완료 여부. done=false면 프론트가 초기 세팅 화면'),
+});
+/** 회원가입 · 로그인 응답: 브라우저는 쿠키로 충분, 서버 · 앱 클라이언트는 token을 Authorization: Bearer로 */
+export const AuthResult = Me.extend({ token: z.string() });
+
+// --- onboarding (초기 세팅) ---
+export const OnboardingTemplate = z.object({ id: z.string(), name: z.string(), description: z.string(), industry: z.string() });
+export const OnboardingApply = z.object({
+  template: z.string().describe('GET /onboarding/templates의 id'),
+  store_name: z.string().min(1).max(100).optional().describe('매장 이름을 바꿀 때'),
 });
 
 // --- integrations / settings ---

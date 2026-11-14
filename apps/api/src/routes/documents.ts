@@ -1,5 +1,6 @@
 // 매장 지식 문서 (F2): 정책 · 매뉴얼 · 상품 상세 같은 글을 올리면 조각으로 나눠 저장 → 매장별 지식 검색(RAG)의 근거.
 // shortcut: 텍스트 · MD만 (JSON 본문). PDF는 텍스트 추출(pdf 파서) 붙일 때 source_type=pdf로
+import { tenantOf } from '../auth.js';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { and, count, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -7,7 +8,6 @@ import * as C from '@mawd/contracts';
 import type { createDb } from '../db/client.js';
 import * as s from '../db/schema.js';
 import { notFound } from '../errors.js';
-import { TENANT_ID } from '../mocks/data.js';
 
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
@@ -43,8 +43,6 @@ export function chunkText(text: string, max = 800): string[] {
 }
 
 export function documentRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
-  // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
-  const tenantOf = () => TENANT_ID;
   const toOut = (d: typeof s.documents.$inferSelect, chunks: number) => ({
     id: d.id,
     title: d.title,
@@ -59,12 +57,12 @@ export function documentRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
 
   return async (app) => {
     app.get('/documents', { schema: { tags: ['knowledge'], response: { 200: z.array(C.Document) }, description: '매장 지식 문서 목록 (조각 수 포함)' } },
-      async () => (await counted(tenantOf())).map((r) => toOut(r.d, r.n)));
+      async (req) => (await counted(tenantOf(req))).map((r) => toOut(r.d, r.n)));
 
     app.post('/documents', {
       schema: { tags: ['knowledge'], body: DocumentCreate, response: { 200: C.Document }, description: '텍스트 · MD 문서 등록 → 조각으로 나눠 저장. 다음 질문부터 AI 근거로 검색됨' },
     }, async (req) => {
-      const t = tenantOf();
+      const t = tenantOf(req);
       const parts = chunkText(req.body.content);
       const doc = await deps.db.withTenant(t, async (tx) => {
         const [d] = await tx.insert(s.documents).values({ tenantId: t, title: req.body.title, sourceType: 'text', source: req.body.source ?? null }).returning();
@@ -75,7 +73,7 @@ export function documentRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
     });
 
     app.patch('/documents/:id', { schema: { tags: ['knowledge'], params: idParam, body: C.DocumentPatch, response: { 200: C.Document }, description: 'enabled=false면 AI 근거에서 뺌' } }, async (req) => {
-      const t = tenantOf();
+      const t = tenantOf(req);
       const [d] = await deps.db.withTenant(t, (tx) => tx.update(s.documents).set(req.body).where(and(eq(s.documents.id, req.params.id), eq(s.documents.tenantId, t))).returning());
       if (!d) notFound('document_not_found');
       const r = (await counted(t)).find((x) => x.d.id === d!.id)!;
@@ -83,7 +81,7 @@ export function documentRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
     });
 
     app.delete('/documents/:id', { schema: { tags: ['knowledge'], params: idParam, response: { 200: z.object({ ok: z.literal(true) }) } } }, async (req) => {
-      const t = tenantOf();
+      const t = tenantOf(req);
       const rows = await deps.db.withTenant(t, (tx) => tx.delete(s.documents).where(and(eq(s.documents.id, req.params.id), eq(s.documents.tenantId, t))).returning({ id: s.documents.id }));
       if (!rows.length) notFound('document_not_found');
       return { ok: true as const };

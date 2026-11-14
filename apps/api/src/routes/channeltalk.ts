@@ -1,4 +1,5 @@
 // 채널톡 웹훅 수신 + 채팅 데모용 조회. 웹훅 주소: POST /v1/webhooks/channeltalk/{매장 webhook_token}?token={채널톡 웹훅 토큰}
+import { tenantOf } from '../auth.js';
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -7,7 +8,6 @@ import type { ChatService } from '../chat/service.js';
 import type { createDb } from '../db/client.js';
 import { ApiError, notFound } from '../errors.js';
 import { parseWebhook } from '../integrations/channeltalk.js';
-import { TENANT_ID } from '../mocks/data.js';
 import { getTenantConfig } from '../tenantConfig.js';
 
 type Db = ReturnType<typeof createDb>;
@@ -20,8 +20,6 @@ const ChatDetail = z.object({
 
 export function channelTalkRoutes(deps: { db: Db; chat: ChatService; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
   const env = deps.env ?? process.env;
-  // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
-  const tenantOf = () => TENANT_ID;
 
   return async (app) => {
     app.post('/webhooks/channeltalk/:token', {
@@ -47,17 +45,17 @@ export function channelTalkRoutes(deps: { db: Db; chat: ChatService; env?: NodeJ
       card: sess.card,
     });
     app.get('/chats/:chatId', { schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), response: { 200: ChatDetail }, description: '채팅 대화 상태 · 전사 · 요약 카드 (데모 화면 폴링용)' } },
-      async (req) => toDetail((await deps.chat.get(tenantOf(), req.params.chatId)) ?? notFound('chat_not_found')));
+      async (req) => toDetail((await deps.chat.get(tenantOf(req), req.params.chatId)) ?? notFound('chat_not_found')));
     // 채널톡 없이 같은 처리를 돌려 보는 데모 · 테스트용 입구 (웹훅과 달리 답이 나올 때까지 기다렸다가 대화 상태를 돌려줌)
     app.post('/chats/:chatId/messages', {
       schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), body: z.object({ text: z.string().min(1).max(2000), customer_name: z.string().min(1).max(100).optional() }), response: { 200: ChatDetail }, description: '데모: 고객 메시지를 채널톡 웹훅과 같은 경로로 처리. AI 채팅 응대가 꺼진 매장은 409 chat_disabled' },
     }, async (req) => {
-      const { response } = getTenantConfig(tenantOf()).settings;
+      const { response } = getTenantConfig(tenantOf(req)).settings;
       if (!response.ai_enabled || !response.channels.chat) throw new ApiError(409, 'chat_disabled', '이 매장은 AI 채팅 응대가 꺼져 있습니다.');
-      await deps.chat.handle(tenantOf(), { chatId: req.params.chatId, text: req.body.text, customerName: req.body.customer_name?.trim() || '데모 고객', customerPhone: null });
-      return toDetail((await deps.chat.get(tenantOf(), req.params.chatId)) ?? notFound('chat_not_found'));
+      await deps.chat.handle(tenantOf(req), { chatId: req.params.chatId, text: req.body.text, customerName: req.body.customer_name?.trim() || '데모 고객', customerPhone: null });
+      return toDetail((await deps.chat.get(tenantOf(req), req.params.chatId)) ?? notFound('chat_not_found'));
     });
     app.post('/chats/:chatId/end', { schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), response: { 200: ChatDetail }, description: '대화 마무리 + 요약 카드 생성 (보통은 chat_idle_minutes 뒤 자동)' } },
-      async (req) => toDetail((await deps.chat.end(tenantOf(), req.params.chatId)) ?? notFound('chat_not_found')));
+      async (req) => toDetail((await deps.chat.end(tenantOf(req), req.params.chatId)) ?? notFound('chat_not_found')));
   };
 }

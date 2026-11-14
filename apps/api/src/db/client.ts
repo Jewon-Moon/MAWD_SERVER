@@ -22,6 +22,11 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     );
   }
 
+  /** 전역 테이블(users · sessions) 전용. 매장 데이터는 반드시 withTenant로 */
+  async function global<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return db.transaction(fn);
+  }
+
   /** 매장을 정하기 전 조회 (§5.1 I4). SECURITY DEFINER 함수만 호출합니다. */
   async function tenantForUser(userId: string): Promise<string | null> {
     const [row] = await client<{ t: string | null }[]>`SELECT tenant_for_user(${userId}) AS t`;
@@ -42,5 +47,5 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     return rows.map((r) => r.t);
   }
 
-  return { withTenant, tenantForUser, tenantForWebhook, tenantForInstagram, tenantsWithConnections, close: () => client.end() };
+  return { withTenant, global, tenantForUser, tenantForWebhook, tenantForInstagram, tenantsWithConnections, close: () => client.end() };
 }

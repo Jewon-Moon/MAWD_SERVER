@@ -1,13 +1,14 @@
 // 인스타그램 연동: Meta 웹훅(구독 확인 · 댓글 수신) + 매장별 계정 연결.
 //   Meta → GET  /v1/webhooks/instagram   구독 확인 (hub.verify_token = INSTAGRAM_VERIFY_TOKEN)
 //   Meta → POST /v1/webhooks/instagram   댓글 이벤트 (X-Hub-Signature-256 = 앱 시크릿 HMAC). 바로 200, 처리는 뒤에서
+import { loadConfig } from '../tenantConfig.js';
+import { tenantOf } from '../auth.js';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { createDb } from '../db/client.js';
 import { ApiError } from '../errors.js';
 import { randomBytes } from 'node:crypto';
 import { exchangeUnifiedCode, parseCommentWebhook, unifiedLoginUrl, verifyMetaSignature } from '../integrations/instagram.js';
-import { TENANT_ID } from '../mocks/data.js';
 import type { InstagramService } from '../sns/instagram.js';
 
 type Db = ReturnType<typeof createDb>;
@@ -28,8 +29,6 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
     if (!appId || !configId || !appSecret || !base) throw new ApiError(503, 'instagram_oauth_not_configured', 'INSTAGRAM_APP_ID · INSTAGRAM_CONFIG_ID · INSTAGRAM_APP_SECRET · PUBLIC_BASE_URL이 필요합니다.');
     return { appId, configId, appSecret, redirectUri: `${base.replace(/\/$/, '')}/v1/instagram/oauth/callback` };
   };
-  // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
-  const tenantOf = () => TENANT_ID;
 
   return async (app) => {
     // 서명 확인에 원본 본문이 필요해서 이 플러그인 안에서만 JSON을 직접 파싱 (다른 라우트에는 영향 없음)
@@ -57,18 +56,20 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
       for (const c of parseCommentWebhook(req.body)) {
         void (async () => {
           const tenantId = await deps.db.tenantForInstagram(c.igUserId);
-          if (tenantId) await deps.instagram.handleComment(tenantId, c);
+          if (!tenantId) return;
+          await loadConfig(deps.db, tenantId);
+          await deps.instagram.handleComment(tenantId, c);
         })().catch((err) => req.log.error({ err, comment: c.commentId }, 'instagram comment failed'));
       }
       return { ok: true as const };
     });
 
     // ---- 통합 로그인 (사장님이 "인스타 연결" 버튼 → Meta 로그인 → 콜백) ----
-    app.get('/instagram/oauth/start', { schema: { tags: ['instagram'], description: 'Meta 로그인 화면으로 이동 (302). 프론트는 이 주소로 이동만 하면 됨' } }, async (_req, reply) => {
+    app.get('/instagram/oauth/start', { schema: { tags: ['instagram'], description: 'Meta 로그인 화면으로 이동 (302). 프론트는 이 주소로 이동만 하면 됨' } }, async (req, reply) => {
       const c = oauthConf();
       const state = randomBytes(18).toString('base64url');
       for (const [k, v] of states) if (Date.now() - v.at > 10 * 60_000) states.delete(k);
-      states.set(state, { tenantId: tenantOf(), at: Date.now() });
+      states.set(state, { tenantId: tenantOf(req), at: Date.now() });
       return reply.redirect(unifiedLoginUrl({ appId: c.appId, configId: c.configId, redirectUri: c.redirectUri, state }));
     });
 
@@ -92,10 +93,10 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
     });
 
     // ---- 매장 연결 (사장님 화면) ----
-    app.get('/instagram/connection', { schema: { tags: ['instagram'], response: { 200: Status }, description: '연결된 인스타 계정' } }, async () => deps.instagram.status(tenantOf()));
+    app.get('/instagram/connection', { schema: { tags: ['instagram'], response: { 200: Status }, description: '연결된 인스타 계정' } }, async (req) => deps.instagram.status(tenantOf(req)));
     app.put('/instagram/connection', {
       schema: { tags: ['instagram'], body: z.object({ access_token: z.string().min(20).max(1000) }), response: { 200: Status }, description: '액세스 토큰으로 계정을 확인하고 연결 (토큰은 암호화 저장). 틀리면 400, 다른 매장 계정이면 409' },
-    }, async (req) => deps.instagram.connect(tenantOf(), req.body.access_token));
-    app.delete('/instagram/connection', { schema: { tags: ['instagram'], response: { 200: Status }, description: '연결 해제 (토큰 삭제)' } }, async () => deps.instagram.disconnect(tenantOf()));
+    }, async (req) => deps.instagram.connect(tenantOf(req), req.body.access_token));
+    app.delete('/instagram/connection', { schema: { tags: ['instagram'], response: { 200: Status }, description: '연결 해제 (토큰 삭제)' } }, async (req) => deps.instagram.disconnect(tenantOf(req)));
   };
 }

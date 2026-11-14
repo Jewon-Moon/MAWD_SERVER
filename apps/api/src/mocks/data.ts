@@ -12,6 +12,7 @@ export const me: Me = {
   tenant: { id: TENANT_ID, name: '데모 상점' },
   integrations: { channeltalk: true, stibee: false },
   onboarding: { channeltalk: true, documents: true, test_message: false },
+  setup: { done: true, template: 'online_shop' },
 };
 
 // 매장 생성 시 기본값 (실제 구현에서도 이 값을 시드로 사용)
