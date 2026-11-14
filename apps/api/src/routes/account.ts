@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { FastifyRequest } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import * as C from '@mawd/contracts';
 import { authOf, tenantOf, type Auth } from '../auth.js';
@@ -11,18 +11,24 @@ import type { createDb } from '../db/client.js';
 import * as s from '../db/schema.js';
 import { ApiError } from '../errors.js';
 import { TEMPLATES, templateById } from '../onboarding/templates.js';
+import type { SecretBox } from '../secrets.js';
 import { configOf, getTenantConfig, loadConfig, saveConfig, setStoreName } from '../tenantConfig.js';
 
 type Db = ReturnType<typeof createDb>;
 const ok = z.object({ ok: z.literal(true) });
 
-export function accountRoutes(deps: { db: Db; auth: Auth; context: ContextStore; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
+export function accountRoutes(deps: { db: Db; auth: Auth; context: ContextStore; secrets?: SecretBox; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
   const env = deps.env ?? process.env;
 
   async function meOf(userId: string, email: string, tenantId: string): Promise<z.infer<typeof C.Me>> {
     await loadConfig(deps.db, tenantId);
     const setup = configOf(tenantId).setup;
-    const channeltalk = !!env.CHANNELTALK_ACCESS_KEY?.trim();
+    const [ctSecret] = await deps.db.withTenant(
+      tenantId,
+      (tx) => tx.select({ kind: s.secrets.kind }).from(s.secrets).where(and(eq(s.secrets.tenantId, tenantId), eq(s.secrets.kind, 'channeltalk'))),
+      { readOnly: true },
+    );
+    const channeltalk = Boolean(ctSecret || env.CHANNELTALK_ACCESS_KEY?.trim());
     return {
       user: { id: userId, email }, tenant: { id: tenantId, name: getTenantConfig(tenantId).storeName },
       integrations: { channeltalk, stibee: !!env.STIBEE_API_KEY?.trim() },

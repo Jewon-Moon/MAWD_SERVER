@@ -19,6 +19,7 @@ export const SettingsChannelsPage: React.FC = () => {
   const { data, applyMe, connectPlatform, showToast } = useApp();
 
   // ChannelTalk
+  const [ctConn, setCtConn] = useState<{ connected: boolean; channel_id: string | null; webhook_url: string | null } | null>(null);
   const [ctKey, setCtKey] = useState('');
   const [ctSecret, setCtSecret] = useState('');
   const [ctBusy, setCtBusy] = useState(false);
@@ -38,12 +39,16 @@ export const SettingsChannelsPage: React.FC = () => {
 
   const loadAll = useCallback(async () => {
     if (!Api.token()) return;
-    const [igRes, commRes, ordRes] = await Promise.allSettled([
+    const [ctRes, igRes, commRes, ordRes] = await Promise.allSettled([
+      Api.channeltalkConnection(),
       Api.instagramConnection(),
       Api.commerceConnections(),
       Api.orders({ limit: 8 }),
     ]);
 
+    if (ctRes.status === 'fulfilled' && ctRes.value) {
+      setCtConn(ctRes.value);
+    }
     if (igRes.status === 'fulfilled' && igRes.value) {
       setIgConn(igRes.value as InstagramConnection);
     }
@@ -67,14 +72,32 @@ export const SettingsChannelsPage: React.FC = () => {
     }
     setCtBusy(true);
     try {
-      await Api.connectChannelTalk(ctKey.trim(), ctSecret.trim());
-      const me = await Api.me();
+      const res = await Api.connectChannelTalk(ctKey.trim(), ctSecret.trim());
+      const [ctRes, me] = await Promise.all([Api.channeltalkConnection().catch(() => null), Api.me()]);
+      if (ctRes) setCtConn(ctRes);
+      else if (res?.webhook_url) setCtConn({ connected: true, channel_id: null, webhook_url: res.webhook_url });
       applyMe(me);
       setCtKey('');
       setCtSecret('');
       showToast('채널톡이 연결되었습니다');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '채널톡 연결 실패';
+      showToast(msg);
+    } finally {
+      setCtBusy(false);
+    }
+  };
+
+  const handleDisconnectChannelTalk = async () => {
+    setCtBusy(true);
+    try {
+      await Api.disconnectChannelTalk();
+      const [ctRes, me] = await Promise.all([Api.channeltalkConnection().catch(() => null), Api.me()]);
+      setCtConn(ctRes ?? { connected: false, channel_id: null, webhook_url: null });
+      applyMe(me);
+      showToast('채널톡 연결을 해제했습니다');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '채널톡 연결 해제 실패';
       showToast(msg);
     } finally {
       setCtBusy(false);
@@ -228,7 +251,7 @@ export const SettingsChannelsPage: React.FC = () => {
     }
   };
 
-  const ctConnected = Boolean(data.integrations?.channeltalk);
+  const ctConnected = Boolean(ctConn?.connected ?? data.integrations?.channeltalk);
   const igConnected = Boolean(igConn?.connected || data.integrations?.instagram);
 
   return (
@@ -242,6 +265,35 @@ export const SettingsChannelsPage: React.FC = () => {
           </span>
         </div>
         <form className="card" onSubmit={handleConnectChannelTalk}>
+          {ctConn?.webhook_url && (
+            <div className="detail-block" style={{ marginBottom: 14 }}>
+              <div className="detail-block-title">채널톡 웹훅 URL (채널톡 데스크 → 설정 → 웹훅에 등록)</div>
+              <div className="btn-row" style={{ alignItems: 'center', marginTop: 6 }}>
+                <input
+                  type="text"
+                  className="input"
+                  readOnly
+                  value={ctConn.webhook_url}
+                  style={{ flex: 1, fontSize: 12 }}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(ctConn.webhook_url || '').then(() => showToast('웹훅 URL을 복사했습니다'));
+                  }}
+                >
+                  복사
+                </button>
+              </div>
+              {ctConn.channel_id && (
+                <div className="row-t2" style={{ marginTop: 6 }}>
+                  연결된 채널 ID: {ctConn.channel_id}
+                </div>
+              )}
+            </div>
+          )}
           <div className="set-row">
             <div className="field">
               <label className="label" htmlFor="ct-access-key">
@@ -272,8 +324,18 @@ export const SettingsChannelsPage: React.FC = () => {
           </div>
           <div className="btn-row">
             <button type="submit" className="btn" disabled={ctBusy}>
-              {ctBusy ? '연결 중...' : '연결하기'}
+              {ctBusy ? '연결 중...' : ctConnected ? '키 업데이트' : '연결하기'}
             </button>
+            {ctConnected && (
+              <button
+                type="button"
+                className="btn danger sm"
+                onClick={handleDisconnectChannelTalk}
+                disabled={ctBusy}
+              >
+                연결 해제
+              </button>
+            )}
           </div>
         </form>
       </section>

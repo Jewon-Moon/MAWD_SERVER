@@ -83,16 +83,17 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
     const tenantId = a?.tenantId ?? (process.env.DEV_ANON_TENANT === '1' ? TENANT_ID : null);
     if (tenantId) await loadConfig(db, tenantId).catch((err) => req.log.error({ err }, 'load tenant config failed'));
   });
+  const secrets = opts.secrets ?? createSecretBox();
+  const sender = opts.sender ?? createChannelTalkSender({ db, secrets, env: process.env, fetchFn: opts.fetchFn, log: (m) => app.log.info(m) });
   const context = createContextStore(db);
-  await app.register(accountRoutes({ db, auth, context }), { prefix: '/v1' });
+  await app.register(accountRoutes({ db, auth, context, secrets }), { prefix: '/v1' });
   await app.register(mockRoutes, { prefix: '/v1' });
-  await app.register(inquiryRoutes({ db }), { prefix: '/v1' });
+  await app.register(inquiryRoutes({ db, sender }), { prefix: '/v1' });
   await app.register(settingsRoutes({ db }), { prefix: '/v1' });
   const llm = opts.llm ?? createLlm();
   const bivia = opts.bivia ?? createBivia();
   const rag = createRag({ db, embedder: opts.embedder ?? createEmbedder() });
   const tracker = opts.tracker ?? createTracker();
-  const secrets = opts.secrets ?? createSecretBox();
   const commerce = createCommerceService({ db, secrets, fetchFn: opts.fetchFn, log: app.log });
   const syncMs = opts.syncIntervalMs ?? (opts.db ? 0 : Number(process.env.COMMERCE_SYNC_INTERVAL_SEC ?? '300') * 1000);
   const syncLoop = commerce.startSyncLoop(syncMs);
@@ -109,8 +110,8 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   app.addHook('onClose', async () => { igSyncLoop.stop(); });
   await app.register(instagramRoutes({ db, instagram, fetchFn: opts.fetchFn }), { prefix: '/v1' });
   await app.register(callRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
-  const chat = createChatService({ db, llm, sender: opts.sender ?? createChannelTalkSender(process.env, (m) => app.log.info(m)), log: app.log, alerts, bivia, rag, tracker, commerce });
-  await app.register(channelTalkRoutes({ db, chat }), { prefix: '/v1' });
+  const chat = createChatService({ db, llm, sender, log: app.log, alerts, bivia, rag, tracker, commerce });
+  await app.register(channelTalkRoutes({ db, chat, secrets, fetchFn: opts.fetchFn }), { prefix: '/v1' });
   await app.register(vapiRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, vapi: opts.vapi ?? createVapiClient() }), { prefix: '/v1' });
   return app;
 }

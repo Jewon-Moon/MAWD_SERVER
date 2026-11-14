@@ -86,7 +86,7 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
           if (e.type === 'sentence') parts.push(e.text);
           if (e.type === 'done') endCall = e.end_call;
         }
-        if (parts.length) await deps.sender.send(sess.chatId, parts.join(' ')).catch((err) => deps.log.error({ err, chat: sess.chatId }, 'channeltalk send failed'));
+        if (parts.length) await deps.sender.send(sess.chatId, parts.join(' '), sess.tenantId).catch((err) => deps.log.error({ err, chat: sess.chatId }, 'channeltalk send failed'));
         if (endCall) { await close(sess); break; }
         // 영업시간에는 사장님이 이어받으므로 AI 대기. 영업시간 밖에는 AI가 계속 응대하고(24시간), 카드는 대화가 끝날 때 전체 내용으로
         if (sess.state === 'HANDOFF' && isOpen(getTenantConfig(sess.tenantId).settings.hours, new Date())) {

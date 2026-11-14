@@ -132,8 +132,12 @@ export const Api = {
     Api.req('/orders/import', { method: 'POST', body: JSON.stringify({ source, csv, dry_run: false }) }),
 
   /* ChannelTalk & Instagram */
+  channeltalkConnection: () =>
+    Api.req<{ connected: boolean; channel_id: string | null; webhook_url: string | null }>('/integrations/channeltalk'),
   connectChannelTalk: (access_key: string, access_secret: string) =>
-    Api.req('/integrations/channeltalk', { method: 'PUT', body: JSON.stringify({ access_key, access_secret }) }),
+    Api.req<{ ok: boolean; webhook_url?: string }>('/integrations/channeltalk', { method: 'PUT', body: JSON.stringify({ access_key, access_secret }) }),
+  disconnectChannelTalk: () =>
+    Api.req<{ ok: boolean }>('/integrations/channeltalk', { method: 'DELETE' }),
   instagramConnection: () => Api.req('/instagram/connection'),
   connectInstagram: (access_token: string) =>
     Api.req('/instagram/connection', { method: 'PUT', body: JSON.stringify({ access_token }) }),

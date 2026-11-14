@@ -7,12 +7,13 @@ import { tenantOf } from '../auth.js';
 import type { createDb } from '../db/client.js';
 import * as s from '../db/schema.js';
 import { notFound } from '../errors.js';
+import type { ChatSender } from '../integrations/channeltalk.js';
 import { getTenantConfig } from '../tenantConfig.js';
 
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
 
-export function inquiryRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
+export function inquiryRoutes(deps: { db: Db; sender?: ChatSender }): FastifyPluginAsyncZod {
   const labelOf = (tenantId: string, heat: number | null) => {
     const l = getTenantConfig(tenantId).settings.response.heat_labels;
     return heat == null ? '보통' as const : heat >= l.very_high ? '매우 높음' as const : heat >= l.high ? '높음' as const : '보통' as const;
@@ -101,11 +102,14 @@ export function inquiryRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
       const reply = b.type === 'edit_send' ? b.text : b.type === 'approve' ? d.card?.recommendations[b.recommendation_index]?.draft : undefined;
       const status = b.type === 'hold' ? 'pending' as const : b.type === 'manual' ? 'manual' as const : 'done' as const;
       await deps.db.withTenant(t, async (tx) => {
-        // shortcut: 답변은 기록만 하고 채널로 보내지는 않음, 채널톡 · 인스타 답장 발송은 채널 sender를 붙일 때
         if (reply) await tx.insert(s.messages).values({ tenantId: t, inquiryId: id, sender: 'owner', text: reply });
         await tx.update(s.inquiries).set({ status, aiMuted: b.type === 'manual' ? true : d.ai_muted, updatedAt: new Date() }).where(eq(s.inquiries.id, id));
         await tx.insert(s.actions).values({ tenantId: t, inquiryId: id, actor: 'owner', type: b.type, payload: b });
       });
+      if (reply && d.channel === 'chat' && deps.sender) {
+        const [inqRow] = await deps.db.withTenant(t, (tx) => tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.id, id)), { readOnly: true });
+        if (inqRow?.ext) await deps.sender.send(inqRow.ext, reply, t).catch((err) => req.log.error({ err, inquiryId: id }, 'channeltalk owner reply send failed'));
+      }
       return detail(t, id);
     });
   };

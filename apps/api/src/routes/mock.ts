@@ -15,9 +15,7 @@ const now = () => new Date().toISOString();
 export const mockRoutes: FastifyPluginAsyncZod = async (app) => {
   // 회원가입 · 로그인 · /me 는 routes/account.ts (실제 구현)
 
-  // integrations / settings
-  app.put('/integrations/channeltalk', { schema: { tags: ['settings'], body: C.ChannelTalkKeys, response: { 200: C.IntegrationResult } } },
-    async () => ({ ok: true, webhook_url: 'http://localhost:8000/v1/webhooks/channeltalk/demo-token' }));
+  // integrations / settings (channeltalk는 routes/channeltalk.ts 실제 구현)
   app.put('/integrations/stibee', { schema: { tags: ['settings'], body: C.StibeeKeys, response: { 200: C.IntegrationResult } } },
     async () => ({ ok: true }));
   // 세부 설정은 routes/settings.ts
