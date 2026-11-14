@@ -24,8 +24,10 @@ export type CommentResult = { action: 'hidden' | 'replied' | 'none' | 'skipped';
 const HANDOFF = '[HANDOFF]';
 
 export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramClient; igFb: InstagramClient; secrets: SecretBox; bivia?: Bivia; rag?: Rag; alerts?: AlertCenter; log?: Log }) {
+  const knownTenants = new Set<string>();
   /** 저장된 토큰 + 그 토큰으로 부를 API (통합 로그인 = graph.facebook.com, 직접 붙여넣은 토큰 = graph.instagram.com) */
   async function credOf(tenantId: string): Promise<{ token: string; client: InstagramClient }> {
+    knownTenants.add(tenantId);
     const [sec] = await deps.db.withTenant(tenantId, (tx) => tx.select({ c: s.secrets.ciphertext }).from(s.secrets).where(eq(s.secrets.kind, 'instagram')), { readOnly: true });
     if (!sec) throw new Error('인스타그램이 연결되어 있지 않습니다.');
     const c = deps.secrets.open<{ access_token: string; api?: 'facebook' | 'instagram' }>(sec.c);
@@ -75,10 +77,12 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
 
   async function status(tenantId: string) {
     const [a] = await deps.db.withTenant(tenantId, (tx) => tx.select().from(s.instagramAccounts), { readOnly: true });
+    if (a) knownTenants.add(tenantId);
     return { connected: !!a, ig_user_id: a?.igUserId ?? null, username: a?.username ?? null, connected_at: a?.connectedAt.toISOString() ?? null };
   }
 
   async function disconnect(tenantId: string) {
+    knownTenants.delete(tenantId);
     await deps.db.withTenant(tenantId, async (tx) => {
       await tx.delete(s.instagramAccounts);
       await tx.delete(s.secrets).where(eq(s.secrets.kind, 'instagram'));
@@ -197,6 +201,32 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     return { fetched, imported, skipped };
   }
 
-  return { connect, connectUnified, status, disconnect, handleComment, syncComments };
+  function startSyncLoop(intervalMs: number) {
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) return { stop: () => {} };
+    let running = false;
+    const timer = setInterval(async () => {
+      if (running) return;
+      running = true;
+      try {
+        const dbTenants = await deps.db.tenantsWithInstagram?.().catch(() => null);
+        const tenantIds = dbTenants ? Array.from(new Set([...dbTenants, ...knownTenants])) : [...knownTenants];
+        for (const t of tenantIds) {
+          try {
+            await syncComments(t);
+          } catch (err) {
+            deps.log?.error({ err, tenantId: t }, 'instagram background sync failed for tenant');
+          }
+        }
+      } catch (err) {
+        deps.log?.error({ err }, 'instagram background sync failed');
+      } finally {
+        running = false;
+      }
+    }, intervalMs);
+    timer.unref();
+    return { stop: () => clearInterval(timer) };
+  }
+
+  return { connect, connectUnified, status, disconnect, handleComment, syncComments, startSyncLoop };
 }
 export type InstagramService = ReturnType<typeof createInstagramService>;

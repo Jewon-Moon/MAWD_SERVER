@@ -104,6 +104,9 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   await app.register(documentRoutes({ db }), { prefix: '/v1' });
   await app.register(commerceRoutes({ commerce }), { prefix: '/v1' });
   const instagram = createInstagramService({ db, llm, ig: opts.instagram ?? createInstagramClient(opts.fetchFn), igFb: opts.instagramFb ?? createInstagramClient(opts.fetchFn, FB_GRAPH), secrets, bivia, rag, alerts, log: app.log });
+  const igSyncMs = opts.db ? 0 : Number(process.env.INSTAGRAM_SYNC_INTERVAL_SEC ?? '15') * 1000;
+  const igSyncLoop = instagram.startSyncLoop(igSyncMs);
+  app.addHook('onClose', async () => { igSyncLoop.stop(); });
   await app.register(instagramRoutes({ db, instagram, fetchFn: opts.fetchFn }), { prefix: '/v1' });
   await app.register(callRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
   const chat = createChatService({ db, llm, sender: opts.sender ?? createChannelTalkSender(process.env, (m) => app.log.info(m)), log: app.log, alerts, bivia, rag, tracker, commerce });

@@ -47,5 +47,11 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     return rows.map((r) => r.t);
   }
 
-  return { withTenant, global, tenantForUser, tenantForWebhook, tenantForInstagram, tenantsWithConnections, close: () => client.end() };
+  /** 인스타그램 댓글 동기화 스케줄러용 (0007). 연결된 인스타그램 계정이 있는 매장 ID만 */
+  async function tenantsWithInstagram(): Promise<string[]> {
+    const rows = await client<{ t: string }[]>`SELECT tenants_with_instagram() AS t`;
+    return rows.map((r) => r.t);
+  }
+
+  return { withTenant, global, tenantForUser, tenantForWebhook, tenantForInstagram, tenantsWithConnections, tenantsWithInstagram, close: () => client.end() };
 }

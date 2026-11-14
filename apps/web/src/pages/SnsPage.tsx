@@ -177,9 +177,33 @@ export const SnsPage: React.FC = () => {
   const isConnected = Boolean(igConn?.connected || igConn?.username || igConn?.ig_user_id);
 
   useEffect(() => {
-    if (hasToken && isConnected) {
-      void handleSyncComments(true);
-    }
+    if (!hasToken || !isConnected) return;
+    let cancelled = false;
+    let inFlight = false;
+
+    const runSync = async () => {
+      if (inFlight || cancelled || !Api.token()) return;
+      inFlight = true;
+      try {
+        const res = await Api.syncInstagram();
+        if (!cancelled && res.imported > 0) {
+          await pullServer();
+        }
+      } catch {
+        // 백그라운드 자동 동기화 실패는 조용히 무시
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void handleSyncComments(true);
+    const id = window.setInterval(() => {
+      void runSync();
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasToken, isConnected]);
 
