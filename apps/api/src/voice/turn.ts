@@ -42,7 +42,7 @@ function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: 
     : `아래 [매장 정보] · [근거]${orders ? ' · [주문 데이터]' : ''} 안에서만 답하세요.${orders?.some((o) => typeof o === 'object' && o && 'platform' in o) ? ' 여러 판매처 주문이 있으면 판매처(platform)를 꼭 구분해서 안내하세요.' : ''} 매장이 팔지 않는 상품이나 하지 않는 서비스를 묻으면 없다고 안내하세요. 가격 · 배송비 · 기간 같은 숫자는 적힌 그대로만 말하고, 적혀 있지 않으면 계산하거나 지어내지 마세요. 근거로 답할 수 없거나 환불 · 보상 · 예외 판단이 필요하면 다른 말 없이 정확히 ${HANDOFF_MARK} 만 출력하세요.`;
   return [
     channel === 'call'
-      ? `당신은 "${cfg.storeName}"의 전화 상담 AI "${p.assistant_name}"입니다. 지금은 음성 통화 중입니다.`
+      ? `당신은 "${cfg.storeName}"의 전화 상담 AI "${p.assistant_name}"입니다. 지금은 음성 통화 중입니다. 고객 말은 음성 인식 결과라 발음이 비슷한 단어로 잘못 적힐 수 있습니다(예: 감각→반박, 재질→기술). 문맥에 맞게 이해하고, 뜻이 애매하면 짧게 되물으세요.`
       : `당신은 "${cfg.storeName}"의 채팅 상담 AI "${p.assistant_name}"입니다. 지금은 채널톡 채팅 중입니다.`,
     channel === 'call'
       ? `말투: ${FORMALITY[p.formality]}. 1~3문장, ${p.max_reply_chars}자 이내로 짧게. 마크다운 · 목록 · 이모지 금지. 날짜는 연도 없이 "11월 13일"처럼, 금액은 "3만 2천 원"처럼 짧게.`
