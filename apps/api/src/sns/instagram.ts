@@ -116,7 +116,13 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     const ig = cfg.settings.instagram;
     const [acct] = await deps.db.withTenant(tenantId, (tx) => tx.select().from(s.instagramAccounts), { readOnly: true });
     // 우리 계정이 단 답글 · 댓글은 다시 처리하지 않음 (자기 답글 루프 방지)
-    if (!ig.enabled || !acct || c.fromId === acct.igUserId || (c.username && c.username === acct.username)) return { action: 'skipped', heat: null, reply: null };
+    const sameUser = Boolean(c.username && acct?.username && c.username.toLowerCase() === acct.username.toLowerCase());
+    if (!ig.enabled || !acct || c.fromId === acct.igUserId || sameUser) return { action: 'skipped', heat: null, reply: null };
+    const [alreadyMsg] = await deps.db.withTenant(tenantId, (tx) =>
+      tx.select({ id: s.messages.id }).from(s.messages).where(eq(s.messages.externalMessageId, c.commentId)).limit(1),
+      { readOnly: true },
+    );
+    if (alreadyMsg) return { action: 'skipped', heat: null, reply: null };
 
     const sess = { id: randomUUID(), channel: 'chat', tenantId, inquiryId: '', state: 'LISTEN', verify: newVerifyState(), abuseStreak: 0, awaitingVerify: false, pendingQuestion: null, heat: 0, needsOwner: false, riskFlags: new Set<string>(), history: [], turnLatencies: [], orderData: [], ended: false } as CallSession;
     const pf = prefilter(c.text, cfg, 'sns');
@@ -132,6 +138,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
 
     let action: CommentResult['action'] = c.hidden ? 'hidden' : 'none';
     let reply: string | null = null;
+    let replyExternalId: string | null = null;
     try {
       const { token, client } = await credOf(tenantId);
       if (c.hidden) {
@@ -142,7 +149,8 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
       } else if (ig.auto_reply && !needsOwner && !abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
         const draft = await draftReply(tenantId, cfg, c);
         if (draft) {
-          await client.reply(c.commentId, draft, token);
+          const repRes = await client.reply(c.commentId, draft, token);
+          replyExternalId = repRes?.id ?? null;
           reply = draft;
           action = 'replied';
         }
@@ -157,11 +165,11 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
       try {
         let out = '';
         for await (const d of deps.llm.stream([
-          { role: 'system', content: '고객 댓글에서 욕설·비속어·감정적 비난은 완전히 제거하고, 고객이 실제로 원하거나 불만을 제기한 핵심 의도만 중립적인 한국어 한 문장(40자 이내, 예: "배송 지연으로 인한 환불 요청")으로 요약하세요. "단순 문의", "부적절한 표현" 같은 모호한 말은 금지합니다.' },
+          { role: 'system', content: '고객 댓글에서 욕설·비속어·감정적 비난은 완전히 제거하고, 고객이 실제로 원하거나 불만을 제기한 핵심 의도만 중립적인 한국어 한 문장(40자 이내, 예: "배송 지연으로 인한 환불 요청")으로 요약하세요. "단순 문의", "부적절한 표현", "신고예고", "신고 예고" 같은 단편적·모호한 말은 금지하고 구체적인 사유(배송/환불/품질/응대 등)를 적으세요.' },
           { role: 'user', content: c.text },
         ], { tier: 'fast', maxTokens: 80 })) out += d;
         const clean = out.trim().replace(/\n+/g, ' ');
-        if (clean.length >= 4 && !clean.includes(HANDOFF) && !clean.includes('단순 문의') && !clean.includes('부적절한 표현') && !prefilter(clean, cfg, 'sns').abusive) {
+        if (clean.length >= 4 && !clean.includes(HANDOFF) && !clean.includes('단순 문의') && !clean.includes('부적절한 표현') && !clean.includes('신고예고') && !clean.includes('신고 예고') && !prefilter(clean, cfg, 'sns').abusive) {
           intentTitle = clean.slice(0, 40);
           intentSummary = `고객 의도: ${clean.slice(0, 120)}`;
         }
@@ -176,7 +184,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
         .onConflictDoUpdate({ target: [s.inquiries.tenantId, s.inquiries.externalChatId], set: { status, updatedAt: new Date() } })
         .returning({ id: s.inquiries.id });
       await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'customer', text: c.text, externalMessageId: c.commentId, createdAt: commentedAt });
-      if (reply) await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: reply });
+      if (reply) await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: reply, externalMessageId: replyExternalId });
       await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner, category: j.category, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive, category: j.category, risk_flags: riskFlags, judged_by: j.by, intent_title: intentTitle, intent_summary: intentSummary } });
       if (action !== 'none') await tx.insert(s.actions).values({ tenantId, inquiryId: inq!.id, actor: 'ai', type: `instagram_${action}`, payload: { comment_id: c.commentId } });
       return inq!.id;
@@ -201,11 +209,15 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     if (!acct) throw new ApiError(400, 'instagram_not_connected', '인스타그램이 연결되어 있지 않습니다.');
     const { token, client } = await credOf(tenantId);
     const media = await client.listMedia(acct.igUserId, token, 20);
-    const existing = await deps.db.withTenant(tenantId, (tx) =>
-      tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.channel, 'sns')),
-      { readOnly: true }
-    );
-    const seen = new Set(existing.map((r) => r.ext).filter((x): x is string => Boolean(x)));
+    const existing = await deps.db.withTenant(tenantId, async (tx) => {
+      const inqs = await tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.channel, 'sns'));
+      const msgs = await tx.select({ ext: s.messages.externalMessageId }).from(s.messages);
+      return { inqs, msgs };
+    }, { readOnly: true });
+    const seen = new Set([
+      ...existing.inqs.map((r) => r.ext).filter((x): x is string => Boolean(x)),
+      ...existing.msgs.map((r) => (r.ext ? `ig:${r.ext}` : null)).filter((x): x is string => Boolean(x)),
+    ]);
 
     let fetched = 0;
     let imported = 0;
@@ -268,7 +280,14 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     return { stop: () => clearInterval(timer) };
   }
 
-  async function replyToInquiry(tenantId: string, inquiryId: string, text: string): Promise<void> {
+  const recentReplies = new Map<string, number>();
+
+  async function replyToInquiry(tenantId: string, inquiryId: string, text: string): Promise<string | null> {
+    const dedupKey = `${tenantId}:${inquiryId}:${text}`;
+    const prevAt = recentReplies.get(dedupKey);
+    if (prevAt && Date.now() - prevAt < 15_000) return null;
+    recentReplies.set(dedupKey, Date.now());
+
     const [inq] = await deps.db.withTenant(
       tenantId,
       (tx) => tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.id, inquiryId)),
@@ -278,8 +297,10 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     if (!commentId) throw new ApiError(400, 'instagram_comment_not_found', '원본 인스타그램 댓글 ID를 찾을 수 없어요.');
     const { token, client } = await credOf(tenantId);
     try {
-      await client.reply(commentId, text, token);
+      const res = await client.reply(commentId, text, token);
+      return res?.id ?? null;
     } catch (err) {
+      recentReplies.delete(dedupKey);
       deps.log?.error({ err, inquiryId, commentId }, 'instagram owner reply failed');
       throw new ApiError(502, 'instagram_reply_failed', `인스타그램 답글 전송에 실패했어요: ${err instanceof Error ? err.message : '알 수 없는 오류'}`.slice(0, 260));
     }

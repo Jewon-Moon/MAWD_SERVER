@@ -53,13 +53,14 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
         const masked = hasAbuse && (!card || r.channel === 'sns');
         const extracted = masked ? extractIntentSummary(previewRaw, category) : null;
         const cardIntent = card ? [card.title, ...(card.demands ?? [])].filter(Boolean).join(' · ') : '';
+        const isVague = (s?: string | null) => !s || /^(단순\s*문의|부적절한\s*표현.*|신고\s*예고)$/.test(s.trim());
         const preview = masked
-          ? (cardIntent || raw.intent_summary || extracted!.summary)
+          ? (cardIntent || (!isVague(raw.intent_summary) ? raw.intent_summary! : extracted!.summary))
           : previewRaw;
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
           title: masked
-            ? (card?.title || raw.intent_title || extracted!.title)
+            ? ((!isVague(card?.title) ? card!.title : null) || (!isVague(raw.intent_title) ? raw.intent_title! : null) || extracted!.title)
             : (card?.title || preview.slice(0, 40) || '(내용 없음)'),
           customer_name: r.customerName,
           category, heat_label: labelOf(tenantId, heat), heat, preview,
@@ -137,11 +138,15 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
       const d = await detail(t, id);
       const reply = b.type === 'edit_send' ? b.text : b.type === 'approve' ? d.card?.recommendations[b.recommendation_index]?.draft : undefined;
       const status = b.type === 'hold' ? 'pending' as const : b.type === 'manual' ? 'manual' as const : 'done' as const;
-      if (reply && d.channel === 'sns' && deps.instagram) {
-        await deps.instagram.replyToInquiry(t, id, reply);
+      const alreadyRepliedSame = Boolean(reply && d.messages.some((m) => m.sender === 'owner' && m.text === reply));
+      let externalReplyId: string | null = null;
+      if (reply && !alreadyRepliedSame && d.channel === 'sns' && deps.instagram) {
+        externalReplyId = await deps.instagram.replyToInquiry(t, id, reply);
       }
       await deps.db.withTenant(t, async (tx) => {
-        if (reply) await tx.insert(s.messages).values({ tenantId: t, inquiryId: id, sender: 'owner', text: reply });
+        if (reply && !alreadyRepliedSame) {
+          await tx.insert(s.messages).values({ tenantId: t, inquiryId: id, sender: 'owner', text: reply, externalMessageId: externalReplyId });
+        }
         await tx.update(s.inquiries).set({ status, aiMuted: b.type === 'manual' ? true : d.ai_muted, updatedAt: new Date() }).where(eq(s.inquiries.id, id));
         await tx.insert(s.actions).values({ tenantId: t, inquiryId: id, actor: 'owner', type: b.type, payload: b });
       });
