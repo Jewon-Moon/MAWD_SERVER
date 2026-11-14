@@ -30,7 +30,14 @@ function transcriberOf(cfg: TenantConfig) {
     case 'soniox': return { provider: 'soniox', model: 'stt-rt-v6', language: 'ko', customVocabulary: terms };
     case 'openai': return { provider: 'openai', model: 'gpt-transcribe', language: 'ko', keywords: terms };
     case '11labs': return { provider: '11labs', model: 'scribe_v2_realtime', language: 'ko' };
-    default: return { provider: 'deepgram', model: 'nova-3', language: 'ko', endpointing: 300, keyterm: terms };
+    default: return {
+      provider: 'deepgram',
+      model: 'nova-3',
+      language: 'ko',
+      smartFormat: true,
+      endpointing: Math.min(1000, Math.max(500, Math.round(cfg.settings.voice.silence_ms / 2))),
+      keyterm: terms,
+    };
   }
 }
 

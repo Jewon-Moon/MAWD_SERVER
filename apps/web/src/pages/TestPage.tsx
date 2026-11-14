@@ -37,6 +37,7 @@ interface SpeechRecognitionInstance {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
+  maxAlternatives?: number;
   onresult: ((ev: SpeechRecognitionEventLike) => void) | null;
   onerror: ((ev: { error?: string }) => void) | null;
   onend: (() => void) | null;
@@ -194,6 +195,12 @@ export const TestPage: React.FC = () => {
   const mutedRef = useRef<boolean>(muted);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const speechTimerRef = useRef<number | null>(null);
+  const speechBufferRef = useRef<{ finalText: string; interimText: string; sent: boolean }>({
+    finalText: '',
+    interimText: '',
+    sent: false,
+  });
   const callTapeRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -253,6 +260,10 @@ export const TestPage: React.FC = () => {
   useEffect(() => {
     return () => {
       stopTts();
+      if (speechTimerRef.current !== null) {
+        window.clearTimeout(speechTimerRef.current);
+        speechTimerRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -638,12 +649,39 @@ export const TestPage: React.FC = () => {
     }
   };
 
+  const clearSpeechTimer = () => {
+    if (speechTimerRef.current !== null) {
+      window.clearTimeout(speechTimerRef.current);
+      speechTimerRef.current = null;
+    }
+  };
+
+  const flushSpeechBuffer = () => {
+    clearSpeechTimer();
+    const buf = speechBufferRef.current;
+    if (buf.sent) return;
+    const text = [buf.finalText, buf.interimText].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    buf.sent = true;
+    buf.finalText = '';
+    buf.interimText = '';
+    if (text) {
+      setVoiceInput('');
+      void sendVoiceTurn(text);
+    }
+  };
+
   /* ── Web Speech API Mic Toggle ── */
   const toggleMic = async () => {
     if (listening && recognitionRef.current) {
-      recognitionRef.current.stop();
+      clearSpeechTimer();
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
       releaseMicStream();
       setListening(false);
+      flushSpeechBuffer();
       return;
     }
 
@@ -653,52 +691,82 @@ export const TestPage: React.FC = () => {
       return;
     }
 
-    if (data.store.voice?.barge_in !== false) {
-      stopTts();
-    }
+    // 마이크 입력 중 AI 음성이 섞여 인식되지 않도록 재생 중인 TTS 중지
+    stopTts();
+    releaseMicStream();
 
-    // 브라우저 하드웨어 에코 제거 · 잡음 억제 · 자동 게인 활성화
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        releaseMicStream();
-        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            channelCount: 1,
-          },
-        });
-      } catch {
-        // 권한 거부 등이면 SpeechRecognition 자체 흐름으로 폴백
-      }
-    }
+    const silenceMs = Math.max(800, Math.min(2500, data.store.voice?.silence_ms ?? 1200));
+    speechBufferRef.current = { finalText: '', interimText: '', sent: false };
 
     const rec = new Ctor();
     rec.lang = 'ko-KR';
-    rec.interimResults = false;
-    rec.continuous = false;
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.maxAlternatives = 3;
 
     rec.onresult = (ev) => {
-      const lastIdx = ev.results.length - 1;
-      const alt = ev.results[lastIdx]?.[0];
-      const transcript = alt?.transcript?.trim();
-      const conf = alt?.confidence;
-      if (typeof conf === 'number' && conf > 0 && conf < 0.35) {
-        return;
+      const finals: string[] = [];
+      const interims: string[] = [];
+      for (let i = 0; i < ev.results.length; i++) {
+        const res = ev.results[i];
+        if (!res) continue;
+        let best = '';
+        for (let j = 0; j < res.length; j++) {
+          const candidate = res[j]?.transcript?.trim();
+          if (candidate) {
+            best = candidate;
+            break;
+          }
+        }
+        if (!best) continue;
+        if (res.isFinal) {
+          finals.push(best);
+        } else {
+          interims.push(best);
+        }
       }
-      if (transcript) {
-        void sendVoiceTurn(transcript);
+
+      const finalText = finals.join(' ').trim();
+      const interimText = interims.join(' ').trim();
+      speechBufferRef.current.finalText = finalText;
+      speechBufferRef.current.interimText = interimText;
+
+      const preview = [finalText, interimText].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      setVoiceInput(preview);
+
+      clearSpeechTimer();
+      if (preview) {
+        speechTimerRef.current = window.setTimeout(() => {
+          try {
+            rec.stop();
+          } catch {
+            // ignore
+          }
+          setListening(false);
+          flushSpeechBuffer();
+        }, silenceMs);
       }
     };
-    rec.onerror = () => {
+    rec.onerror = (ev) => {
+      clearSpeechTimer();
       releaseMicStream();
       setListening(false);
+      const code = ev?.error || '';
+      if (code === 'aborted' || code === 'no-speech') {
+        flushSpeechBuffer();
+        return;
+      }
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        showToast('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크를 허용해 주세요.');
+        return;
+      }
       showToast('음성 인식 중 오류가 발생했습니다');
     };
     rec.onend = () => {
+      clearSpeechTimer();
       releaseMicStream();
       setListening(false);
+      flushSpeechBuffer();
     };
 
     recognitionRef.current = rec;
@@ -706,6 +774,8 @@ export const TestPage: React.FC = () => {
       rec.start();
       setListening(true);
     } catch {
+      clearSpeechTimer();
+      releaseMicStream();
       setListening(false);
       showToast('마이크를 시작할 수 없습니다');
     }
