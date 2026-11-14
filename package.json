@@ -1,0 +1,21 @@
+{
+  "name": "mawd",
+  "private": true,
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "dev": "pnpm --filter @mawd/api dev",
+    "test": "pnpm --filter @mawd/api test",
+    "typecheck": "pnpm -r typecheck",
+    "start": "pnpm --filter @mawd/api start",
+    "migrate": "pnpm --filter @mawd/api migrate",
+    "seed": "pnpm --filter @mawd/api seed"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22.9"
+  }
+}

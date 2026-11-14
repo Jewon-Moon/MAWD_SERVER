@@ -1,0 +1,24 @@
+# 의존성 · 빌드
+node_modules
+dist
+
+# 비밀 (설정 항목은 .env.example 참고)
+.env
+.env.*
+!.env.example
+*.pem
+*firebase-adminsdk*.json
+
+# OS · 에디터
+.DS_Store
+.idea
+.vscode
+
+# 서버 운영에 필요 없는 것 (로컬에만 둠)
+docs/
+apps/api/test/
+apps/api/vitest.config.ts
+apps/api/openapi.json
+docker-compose.yml
+graphify-out/
+.claude/

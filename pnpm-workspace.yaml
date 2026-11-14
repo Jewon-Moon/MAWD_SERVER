@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# tsx가 쓰는 esbuild의 설치 스크립트 허용 (없으면 pnpm 12가 설치를 멈춤)
+allowBuilds:
+  esbuild: true

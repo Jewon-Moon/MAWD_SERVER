@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>감정 방패 · AI 전화 데모</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --ink: #16181d; --muted: #6b7280; --line: #e5e7eb;
+    --brand: #3b5bfd; --brand-soft: #eef1ff; --ok: #0f9d58; --warn: #e8710a; --danger: #d93025;
+    --customer: #16181d; --ai: #eef1ff; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Pretendard, -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(340px, 440px) 1fr; gap: 20px; padding: 20px 24px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .panel h2 { margin: 0 0 4px; font-size: 15px; }
+  .panel .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+  /* 고객 통화 */
+  [hidden] { display: none !important; }
+  .phone { display: flex; flex-direction: column; height: min(78vh, 760px); }
+  .callbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .state { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--line); color: var(--muted); letter-spacing: .02em; }
+  .state.ANSWER, .state.GREET, .state.LISTEN { background: var(--brand-soft); color: var(--brand); }
+  .state.VERIFY { background: #fff4e5; color: var(--warn); }
+  .state.CALM { background: #fde7e9; color: var(--danger); }
+  .state.HANDOFF, .state.CLOSE { background: #e6f4ea; color: var(--ok); }
+  .timer { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; }
+  .log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 8px; }
+  .bubble { max-width: 85%; padding: 10px 13px; border-radius: 16px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
+  .bubble.customer { align-self: flex-end; background: var(--customer); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble.ai { align-self: flex-start; background: var(--ai); border-bottom-left-radius: 4px; }
+  .bubble.interim { opacity: .55; font-style: italic; }
+  .lat { align-self: flex-start; font-size: 11.5px; color: var(--muted); margin: -4px 0 2px 4px; font-variant-numeric: tabular-nums; }
+  .lat b { color: var(--ink); }
+  .controls { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer; background: var(--line); color: var(--ink); font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--brand); color: #fff; flex: 1; padding: 13px; font-size: 15px; }
+  button.danger { background: var(--danger); color: #fff; flex: 1; padding: 13px; font-size: 15px; }
+  button.chip { padding: 6px 10px; font-size: 12.5px; font-weight: 500; background: #f3f4f6; border: 1px solid var(--line); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  input[type=text] { flex: 1; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+  .mic { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #c4c7cc; }
+  .dot.on { background: var(--danger); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  label.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+
+  /* 사장님 화면 */
+  .owner { display: grid; gap: 16px; align-content: start; }
+  .customer-col { display: grid; gap: 10px; align-content: start; }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button { flex: 1; background: #f3f4f6; border: 1px solid var(--line); font-weight: 600; }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .chatpane { display: flex; flex-direction: column; height: min(78vh, 760px); }
+  .badge-handoff { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 13px; padding: 4px 6px; }
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .metric { background: #f8f9fb; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .metric .k { font-size: 12px; color: var(--muted); }
+  .metric .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .metric .v small { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .empty { color: var(--muted); font-size: 14px; padding: 28px 12px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
+  .card h3 { margin: 0; font-size: 17px; }
+  .card .meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 14px; }
+  .tag { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #f3f4f6; color: var(--muted); font-weight: 600; }
+  .tag.heat-높음 { background: #fff4e5; color: var(--warn); }
+  .tag.heat-매우 { background: #fde7e9; color: var(--danger); }
+  .tag.risk { background: #fde7e9; color: var(--danger); }
+  .sec { margin-top: 14px; }
+  .sec h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .sec ul { margin: 0; padding-left: 18px; line-height: 1.7; font-size: 14.5px; }
+  .src { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; margin-right: 6px; }
+  .src.order_data { background: #e6f4ea; color: var(--ok); }
+  .src.customer_claim { background: #f3f4f6; color: var(--muted); }
+  .rec { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 8px; }
+  .rec b { font-size: 14px; }
+  .rec p { margin: 6px 0 10px; font-size: 14px; line-height: 1.55; color: #374151; }
+  .settings button { white-space: nowrap; }
+  .settings { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+  @media (max-width: 600px) { .settings { grid-template-columns: 1fr; } .metrics { grid-template-columns: 1fr 1fr; } }
+  .settings label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .settings select, .settings input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: #fff; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>감정 방패 · AI 전화 응대</h1>
+    <p>고객 전화는 AI가 먼저 받고, 사장님에게는 욕설 없는 요약 카드만 전달합니다.</p>
+  </div>
+  <span class="mic"><span class="dot" id="micDot"></span><span id="micText">마이크 꺼짐</span></span>
+</header>
+
+<main>
+  <div class="customer-col">
+  <div class="tabs" role="tablist" aria-label="문의 채널">
+    <button role="tab" id="tabCall" aria-selected="true" aria-controls="phonePane">📞 전화</button>
+    <button role="tab" id="tabChat" aria-selected="false" aria-controls="chatPane">💬 채널톡 채팅</button>
+  </div>
+  <!-- 고객 통화 -->
+  <section class="panel phone" id="phonePane" role="tabpanel" aria-label="고객 통화">
+    <div class="callbar">
+      <h2 style="margin:0">고객 통화</h2>
+      <span class="state" id="state">대기</span>
+      <span class="timer" id="timer">00:00</span>
+      <span class="timer" id="engineTag" title="통화 음성 엔진"></span>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="controls">
+      <div class="chips" aria-label="데모 시나리오">
+        <button class="chip" data-say="영업시간이 어떻게 돼요?">영업시간 문의</button>
+        <button class="chip" data-say="주문한 머그컵 언제 와요?">주문 조회</button>
+        <button class="chip" data-say="주문번호 1234 뒷자리 5678이요">본인 확인</button>
+        <button class="chip" data-say="아니 진짜 짜증나네요 벌써 며칠째예요 당장 환불해 주세요!!">화난 고객</button>
+        <button class="chip" data-say="소비자원에 신고할 거예요">법적 조치 언급</button>
+        <button class="chip" data-say="네 알겠어요 끊을게요">통화 마무리</button>
+      </div>
+      <form class="row" id="textForm">
+        <label class="sr" for="textInput">말 대신 입력</label>
+        <input type="text" id="textInput" placeholder="말 대신 입력해도 됩니다 (시끄러운 장소용)" autocomplete="off" disabled>
+        <button type="submit" id="sendBtn" disabled>보내기</button>
+      </form>
+      <div class="row">
+        <button class="primary" id="callBtn">📞 전화 걸기</button>
+        <button class="danger" id="hangBtn" hidden>통화 종료</button>
+      </div>
+      <div class="row" style="justify-content:space-between">
+        <label class="toggle"><input type="checkbox" id="bargeToggle" checked> 끼어들기 (이어폰 권장)</label>
+        <label class="toggle"><input type="checkbox" id="muteToggle"> 소리 끄기</label>
+        <label class="toggle"><input type="checkbox" id="micToggle" checked> 음성 입력</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- 고객 채팅 (채널톡 웹훅과 같은 서버 처리를 거침) -->
+  <section class="panel chatpane" id="chatPane" role="tabpanel" aria-label="고객 채팅" hidden>
+    <div class="callbar">
+      <h2 style="margin:0">채널톡 채팅</h2>
+      <span class="state" id="chatState">대기</span>
+      <span class="badge-handoff" id="chatHandoff" hidden>사장님 연결됨 · AI 대기</span>
+    </div>
+    <div class="log" id="chatLog" aria-live="polite"></div>
+    <div class="controls">
+      <div class="chips" aria-label="채팅 데모 시나리오">
+        <button class="chip" data-chat="영업시간이 어떻게 되나요?">영업시간 문의</button>
+        <button class="chip" data-chat="주문한 머그컵 언제 와요?">주문 조회</button>
+        <button class="chip" data-chat="주문번호 1234 / 010-1111-5678 입니다">본인 확인</button>
+        <button class="chip" data-chat="아 진짜 짜증나네 일주일째 안 오는데 당장 환불해줘요">화난 고객</button>
+        <button class="chip" data-chat="보상금은 얼마 주실 건가요?">보상 요구</button>
+      </div>
+      <form class="row" id="chatForm">
+        <label class="sr" for="chatInput">메시지</label>
+        <input type="text" id="chatInput" placeholder="고객이 되어 메시지를 보내 보세요" autocomplete="off">
+        <button type="submit">보내기</button>
+      </form>
+      <div class="row">
+        <button class="danger" id="chatEndBtn" disabled>대화 마무리 (요약 카드 만들기)</button>
+        <button id="chatNewBtn">새 대화</button>
+      </div>
+    </div>
+  </section>
+  </div>
+
+  <!-- 사장님 화면 -->
+  <section class="owner" aria-label="사장님 화면">
+    <div class="panel">
+      <h2>사장님 화면</h2>
+      <p class="sub">통화 중에는 아무것도 보지 않아도 됩니다. 끝나면 정리된 카드만 도착합니다.</p>
+      <div class="metrics">
+        <div class="metric"><div class="k">AI 답변 체감 (p50)</div><div class="v" id="mP50">–</div></div>
+        <div class="metric"><div class="k">AI 답변 서버 (p50)</div><div class="v" id="mServer">–</div></div>
+        <div class="metric"><div class="k">턴 수</div><div class="v" id="mTurns">0</div></div>
+      </div>
+    </div>
+    <div class="panel card" id="cardPanel">
+      <div class="empty" id="cardEmpty">통화가 끝나면 요약 카드가 여기에 나타납니다.</div>
+    </div>
+    <div class="panel">
+      <h2>매장 설정</h2>
+      <p class="sub">매장마다 AI 응대를 조정할 수 있습니다. 다음 턴부터 바로 반영됩니다.</p>
+      <form class="settings" id="settingsForm">
+        <label>상담원 이름 <input id="sName" maxlength="30"></label>
+        <label>말투
+          <select id="sFormality">
+            <option value="formal">하십시오체</option>
+            <option value="polite">해요체</option>
+            <option value="casual">반말</option>
+          </select>
+        </label>
+        <label>격앙 기준 <span id="sHeatVal"></span> <input type="range" id="sHeat" min="10" max="95" step="5"></label>
+        <button type="submit">적용</button>
+      </form>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const API = '/v1';
+const $ = (id) => document.getElementById(id);
+const h = (tag, props = {}, ...kids) => { const el = Object.assign(document.createElement(tag), props); kids.flat().forEach((k) => k != null && el.append(k)); return el; };
+const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); };
+const median = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const sec = (ms) => (ms / 1000).toFixed(2) + 's';
+const norm = (t) => t.replace(/[\s.,!?~…'"]/g, '');
+
+let settings = null, call = null, ended = false, callStart = 0, timerId = null;
+
+// ---------- 매장 설정 ----------
+async function loadSettings() {
+  settings = await (await fetch(`${API}/settings`)).json();
+  $('sName').value = settings.persona.assistant_name;
+  $('sFormality').value = settings.persona.formality;
+  $('sHeat').value = settings.response.heat_threshold;
+  $('sHeatVal').textContent = settings.response.heat_threshold;
+}
+$('sHeat').oninput = (e) => { $('sHeatVal').textContent = e.target.value; };
+$('settingsForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const patch = (section, body) => fetch(`${API}/settings/${section}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await Promise.all([
+    patch('persona', { assistant_name: $('sName').value.trim() || '도우미', formality: $('sFormality').value }),
+    patch('response', { heat_threshold: Number($('sHeat').value) }),
+  ]);
+  if (r.every((x) => x.ok)) { await loadSettings(); toast('설정을 저장했어요. 다음 턴부터 반영됩니다.'); }
+  else toast('설정 저장에 실패했어요.');
+};
+
+// ---------- 음성 합성 (TTS) ----------
+let ttsVoice = null, speakingCount = 0, spokenThisTurn = '';
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  const want = settings?.voice.tts.voice_name;
+  ttsVoice = vs.find((v) => v.name === want) || vs.find((v) => v.lang === 'ko-KR' && /Google|Yuna|Sora|Heami/i.test(v.name)) || vs.find((v) => v.lang?.startsWith('ko')) || null;
+}
+speechSynthesis.onvoiceschanged = pickVoice;
+const isSpeaking = () => speakingCount > 0;
+// 문장이 오는 즉시 서버 TTS를 요청하고(병렬), 재생은 순서대로. 실패하면 브라우저 음성으로 대신 읽음
+let playChain = Promise.resolve(), ttsGen = 0, curAudio = null;
+function speak(text, onStart) {
+  speakingCount++;
+  spokenThisTurn += text;
+  const gen = ttsGen;
+  // Audio를 미리 만들어 두면(preload) 앞 문장 재생 중에 받기 시작함
+  const audio = settings?.voice.tts.engine !== 'browser' // vapi 매장도 Vapi 키가 없으면 서버 음성으로
+    ? fetch(`${API}/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+      .then((r) => (r.ok ? r.json() : null)).then((j) => { if (!j) return null; const a = new Audio(j.url); a.preload = 'auto'; return a; }).catch(() => null)
+    : null;
+  playChain = playChain.then(async () => {
+    const a = await audio;
+    if (gen !== ttsGen) return;
+    if (!a || !(await playAudio(a, onStart))) { if (gen === ttsGen) await speakBrowser(text, onStart); }
+  }).finally(() => {
+    if (gen !== ttsGen) return;
+    speakingCount = Math.max(0, speakingCount - 1);
+    if (!isSpeaking()) onAllSpoken?.();
+  });
+}
+// 재생했으면 true, 오류면 false (→ 브라우저 음성으로 대신 읽음)
+function playAudio(a, onStart) {
+  return new Promise((done) => {
+    curAudio = a;
+    let started = false;
+    a.muted = $('muteToggle').checked; // 소리 없이 테스트 (지연 측정은 그대로)
+    a.onplaying = () => { started = true; onStart?.(); };
+    a.onended = a.onpause = () => done(true);
+    a.onerror = () => done(started);
+    a.play().catch(() => done(started));
+  });
+}
+function speakBrowser(text, onStart) {
+  return new Promise((done) => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    if (ttsVoice) u.voice = ttsVoice;
+    u.rate = settings?.voice.tts.rate ?? 1;
+    u.pitch = settings?.voice.tts.pitch ?? 1;
+    u.volume = $('muteToggle').checked ? 0 : 1;
+    u.onstart = () => onStart?.();
+    u.onend = u.onerror = () => done();
+    speechSynthesis.speak(u);
+  });
+}
+$('muteToggle').onchange = (e) => { if (curAudio) curAudio.muted = e.target.checked; vapi?.setVolume(e.target.checked ? 0 : 1); };
+let onAllSpoken = null;
+function stopSpeaking() { ttsGen++; playChain = Promise.resolve(); curAudio?.pause(); speechSynthesis.cancel(); speakingCount = 0; }
+
+// ---------- 화면 ----------
+function bubble(role, text) { const b = h('div', { className: `bubble ${role}`, textContent: text }); $('log').append(b); $('log').scrollTop = 1e9; return b; }
+let interimEl = null;
+function showInterim(text) {
+  if (!interimEl) { interimEl = bubble('customer interim', ''); }
+  interimEl.textContent = text; $('log').scrollTop = 1e9;
+}
+function clearInterim() { interimEl?.remove(); interimEl = null; }
+function setState(s) { const el = $('state'); el.className = `state ${s}`; el.textContent = { GREET: '인사', LISTEN: '듣는 중', ANSWER: '답변', VERIFY: '본인 확인', CALM: '진정 응대', HANDOFF: '사장님 연결', CLOSE: '마무리' }[s] || s; }
+function setMic(on) { $('micDot').classList.toggle('on', on); $('micText').textContent = on ? '듣는 중' : '마이크 꺼짐'; }
+
+// p50은 AI가 생성한 턴만 (즉시 나가는 고정 문구 · 필러 턴을 섞으면 숫자가 실제보다 좋아 보임)
+const perceived = [], serverMs = [];
+let turnCount = 0;
+const GENERATED_MS = 50;
+function renderMetrics() {
+  const p = median(perceived), s = median(serverMs);
+  $('mP50').innerHTML = p == null ? '–' : `${sec(p)} <small>${perceived.length}턴</small>`;
+  $('mServer').textContent = s == null ? '–' : sec(s);
+  $('mTurns').textContent = turnCount;
+}
+
+const record = (m) => { if (m.server >= GENERATED_MS) { perceived.push(m.firstSound - m.tSpeechEnd); serverMs.push(m.server); } };
+
+// ---------- 턴 전송 (SSE) ----------
+let turnCtl = null;
+async function sendTurn(text, tSpeechEnd) {
+  if (!call || ended) return;
+  turnCtl?.abort();
+  const ctl = new AbortController(); turnCtl = ctl;
+  stopSpeaking(); spokenThisTurn = '';
+  bubble('customer', text);
+  const tSend = performance.now();
+  const m = { tSpeechEnd: tSpeechEnd ?? tSend, tSend, firstSound: null, server: null };
+  let aiEl = null, latEl = null, endCall = false;
+
+  const showLatency = () => {
+    if (m.firstSound == null) return;
+    const total = m.firstSound - m.tSpeechEnd, detect = m.tSend - m.tSpeechEnd, server = m.server ?? 0;
+    const rest = Math.max(0, total - detect - server);
+    latEl ??= h('div', { className: 'lat' });
+    latEl.innerHTML = `체감 <b>${sec(total)}</b> · 발화 끝 감지 ${sec(detect)} · 서버 ${sec(server)} · 네트워크·음성 ${sec(rest)}`;
+    if (aiEl && !latEl.isConnected) aiEl.after(latEl);
+  };
+
+  try {
+    const res = await fetch(`${API}/calls/${call.call_id}/turns`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }), signal: ctl.signal });
+    if (!res.ok) throw new Error((await res.json()).error?.message || res.status);
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const line = block.split('\n').find((l) => l.startsWith('data:'));
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(5));
+        if (ev.type === 'state') setState(ev.state);
+        else if (ev.type === 'sentence') {
+          if (!aiEl) aiEl = bubble('ai', ev.text); else { aiEl.textContent += ' ' + ev.text; $('log').scrollTop = 1e9; }
+          speak(ev.text, () => {
+            if (m.firstSound == null && turnCtl === ctl) {
+              m.firstSound = performance.now(); turnCount++;
+              if (m.server != null) record(m);
+              showLatency(); renderMetrics();
+            }
+          });
+        } else if (ev.type === 'metrics') {
+          m.server = ev.first_sentence_ms;
+          if (m.firstSound != null) { record(m); showLatency(); renderMetrics(); }
+        } else if (ev.type === 'done') endCall = ev.end_call;
+        else if (ev.type === 'error') toast(ev.message);
+      }
+    }
+    if (endCall) { onAllSpoken = () => { onAllSpoken = null; hangUp(); }; if (!isSpeaking()) onAllSpoken(); }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('응답을 받지 못했어요: ' + e.message);
+  }
+}
+
+// ---------- 음성 인식 (STT) ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, committed = 0, latestLen = 0, lastResultAt = 0, silenceTimer = null, pending = '';
+
+function isEcho(text) {
+  // 스피커로 나간 AI 목소리를 마이크가 다시 받아 적은 것인지 (끼어들기 오작동 방지)
+  const t = norm(text), s = norm(spokenThisTurn);
+  if (t.length < 3) return true;
+  let hit = 0; for (const ch of t) if (s.includes(ch)) hit++;
+  return hit / t.length > 0.7;
+}
+
+function startRecognition() {
+  if (!SR || !$('micToggle').checked) return;
+  rec = new SR(); rec.lang = 'ko-KR'; rec.continuous = true; rec.interimResults = true;
+  committed = 0; latestLen = 0;
+  rec.onresult = (e) => {
+    latestLen = e.results.length;
+    let text = '';
+    for (let i = committed; i < e.results.length; i++) text += e.results[i][0].transcript;
+    text = text.trim();
+    if (!text) return;
+    if (isSpeaking()) {
+      if (isEcho(text)) { committed = latestLen; return; }
+      if ($('bargeToggle').checked && settings?.voice.barge_in !== false) { stopSpeaking(); turnCtl?.abort(); } // 끼어들기
+      else { committed = latestLen; return; }
+    }
+    pending = text; lastResultAt = performance.now();
+    showInterim(text);
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      committed = latestLen;
+      const said = pending; pending = '';
+      clearInterim();
+      if (said) sendTurn(said, lastResultAt);
+    }, settings?.voice.silence_ms ?? 500);
+  };
+  rec.onstart = () => setMic(true);
+  rec.onend = () => { setMic(false); if (call && !ended && $('micToggle').checked) { try { rec.start(); } catch {} } }; // 크롬은 주기적으로 인식을 끊어서 다시 시작
+  rec.onerror = (e) => { if (e.error === 'not-allowed') { toast('마이크 권한이 필요해요. 입력창으로도 진행할 수 있어요.'); $('micToggle').checked = false; } };
+  try { rec.start(); } catch {}
+}
+function stopRecognition() { clearTimeout(silenceTimer); clearInterim(); if (rec) { rec.onend = null; rec.abort(); rec = null; } setMic(false); }
+$('micToggle').onchange = (e) => {
+  if (!call || ended) return;
+  if (call.vapi) { vapi.setMuted(!e.target.checked); setMic(e.target.checked); return; }
+  e.target.checked ? startRecognition() : stopRecognition();
+};
+
+// ---------- Vapi 통화 (듣기 · 말 끝 감지 · 끼어들기 · 음성은 Vapi, 답변은 우리 서버) ----------
+let vapi = null, vapiPoll = null, vapiAi = null, vapiUserEnd = null;
+const callBase = () => (call.vapi ? `${API}/vapi/calls/${call.call_id}` : `${API}/calls/${call.call_id}`);
+async function startVapiCall(cfg) {
+  const synced = await fetch(`${API}/vapi/assistant/sync`, { method: 'POST' });
+  const sb = await synced.json();
+  if (!synced.ok) throw new Error(sb.error?.message || synced.status);
+  if (!vapi) {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@vapi-ai/web@3.0.1/+esm');
+    const Vapi = mod.default?.default ?? mod.default;
+    vapi = new Vapi(cfg.public_key);
+    vapi.on('message', onVapiMessage);
+    vapi.on('speech-start', () => { // AI가 말하기 시작한 순간 = 첫 소리
+      if (vapiUserEnd == null) return;
+      perceived.push(performance.now() - vapiUserEnd); vapiUserEnd = null; turnCount++; renderMetrics();
+    });
+    vapi.on('call-end', () => { if (call?.vapi && !ended) hangUp(); });
+    vapi.on('error', (e) => toast('Vapi 오류: ' + (e?.error?.message || e?.message || '연결 문제')));
+  }
+  vapi.setVolume($('muteToggle').checked ? 0 : 1);
+  const c = await vapi.start(sb.assistant_id);
+  if (!c?.id) throw new Error('통화를 시작하지 못했어요');
+  vapi.setMuted(!$('micToggle').checked);
+  return { call_id: c.id, vapi: true };
+}
+function onVapiMessage(m) {
+  if (m.type !== 'transcript') return;
+  if (m.role === 'user') {
+    if (m.transcriptType !== 'final') return showInterim(m.transcript);
+    clearInterim(); bubble('customer', m.transcript); vapiAi = null; vapiUserEnd = performance.now();
+  } else if (m.transcriptType === 'final') {
+    if (!vapiAi) vapiAi = bubble('ai', m.transcript); else { vapiAi.textContent += ' ' + m.transcript; $('log').scrollTop = 1e9; }
+  }
+}
+// 상태 · 서버 시간은 서버에서 (Vapi 화면 이벤트에는 우리 상태 머신 정보가 없음)
+async function pollVapiState() {
+  if (!call?.vapi || ended) return;
+  const r = await fetch(callBase()).catch(() => null);
+  if (!r?.ok) return;
+  const d = await r.json();
+  setState(d.state);
+  serverMs.splice(0, serverMs.length, ...d.turn_latencies_ms.filter((x) => x >= GENERATED_MS));
+  renderMetrics();
+}
+function sendText(t) {
+  if (!call || ended) return toast('먼저 전화를 걸어 주세요.');
+  if (!call.vapi) return sendTurn(t);
+  bubble('customer', t); vapiAi = null; vapiUserEnd = performance.now();
+  vapi.send({ type: 'add-message', message: { role: 'user', content: t } });
+}
+
+// ---------- 통화 ----------
+async function startCall() {
+  $('callBtn').disabled = true;
+  try {
+    await loadSettings(); pickVoice();
+    const cfg = await (await fetch(`${API}/vapi/config`)).json().catch(() => ({ enabled: false }));
+    if (cfg.enabled) {
+      try {
+        call = await startVapiCall(cfg); ended = false;
+        $('log').replaceChildren(); perceived.length = 0; serverMs.length = 0; turnCount = 0; renderMetrics();
+        $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: '통화 중입니다. 사장님은 다른 일을 하셔도 됩니다.' }));
+        $('engineTag').textContent = 'Vapi'; setState('GREET'); setMic(true);
+        $('callBtn').hidden = true; $('hangBtn').hidden = false;
+        $('textInput').disabled = $('sendBtn').disabled = false;
+        callStart = Date.now();
+        timerId = setInterval(() => { const s = Math.floor((Date.now() - callStart) / 1000); $('timer').textContent = `${String(s / 60 | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 500);
+        vapiPoll = setInterval(pollVapiState, 1000);
+        return;
+      } catch (e) { toast('Vapi 연결 실패, 브라우저 통화로 진행해요: ' + e.message); }
+    }
+    $('engineTag').textContent = settings.voice.tts.engine === 'browser' ? '브라우저 음성' : '브라우저 인식 + 서버 음성';
+    const res = await fetch(`${API}/calls`, { method: 'POST' });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error?.message || res.status);
+    call = body; ended = false;
+    $('log').replaceChildren(); perceived.length = 0; serverMs.length = 0; turnCount = 0; renderMetrics();
+    $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: '통화 중입니다. 사장님은 다른 일을 하셔도 됩니다.' }));
+    setState('GREET');
+    bubble('ai', call.greeting_text);
+    spokenThisTurn = ''; speak(call.greeting_text);
+    $('callBtn').hidden = true; $('hangBtn').hidden = false;
+    $('textInput').disabled = $('sendBtn').disabled = false; $('textInput').focus();
+    callStart = Date.now();
+    timerId = setInterval(() => { const s = Math.floor((Date.now() - callStart) / 1000); $('timer').textContent = `${String(s / 60 | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 500);
+    if (!SR) toast('이 브라우저는 음성 인식을 지원하지 않아요. 크롬을 쓰거나 입력창으로 진행하세요.');
+    startRecognition();
+  } catch (e) {
+    toast('전화를 걸 수 없어요: ' + e.message);
+  } finally { $('callBtn').disabled = false; }
+}
+
+async function hangUp() {
+  if (!call || ended) return;
+  ended = true; clearInterval(timerId); clearInterval(vapiPoll);
+  stopRecognition(); turnCtl?.abort();
+  if (call.vapi) { clearInterim(); setMic(false); vapi?.stop().catch(() => {}); }
+  $('hangBtn').hidden = true; $('callBtn').hidden = false; $('callBtn').textContent = '📞 다시 걸기';
+  $('textInput').disabled = $('sendBtn').disabled = true;
+  setState('CLOSE');
+  const base = callBase();
+  await fetch(`${base}/end`, { method: 'POST' });
+  $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: 'AI가 통화 내용을 정리하고 있어요…' }));
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const d = await (await fetch(base)).json();
+    if (d.card) return renderCard(d.card);
+  }
+  $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: '카드를 만들지 못했어요. 서버 로그를 확인해 주세요.' }));
+}
+
+function renderCard(c) {
+  const heatClass = c.heat_label === '매우 높음' ? 'heat-매우' : `heat-${c.heat_label}`;
+  const srcLabel = { order_data: '주문 데이터', customer_claim: '고객 주장' };
+  $('cardPanel').replaceChildren(
+    h('h3', { textContent: c.title }),
+    h('div', { className: 'meta' },
+      h('span', { className: `tag ${heatClass}`, textContent: `감정 ${c.heat_label}` }),
+      c.risk_flags.map((f) => h('span', { className: 'tag risk', textContent: f }))),
+    h('div', { className: 'sec' }, h('h4', { textContent: '요구사항' }), h('ul', {}, c.demands.map((d) => h('li', { textContent: d })))),
+    h('div', { className: 'sec' }, h('h4', { textContent: '사실관계' }), h('ul', {}, c.facts.map((f) => h('li', {}, h('span', { className: `src ${f.source}`, textContent: srcLabel[f.source] }), f.text)))),
+    h('div', { className: 'sec' }, h('h4', { textContent: '추천 대응안' }),
+      c.recommendations.map((r) => h('div', { className: 'rec' },
+        h('b', { textContent: r.label + (r.policy_ref ? ` · ${r.policy_ref}` : '') }),
+        h('p', { textContent: r.draft }),
+        h('button', { className: 'chip', textContent: '초안 복사', onclick: () => navigator.clipboard.writeText(r.draft).then(() => toast('복사했어요')) })))),
+  );
+}
+
+// ---------- 채팅 (채널톡) ----------
+// 서버의 채팅 처리(웹훅과 같은 경로)를 데모 입구 POST /chats/{id}/messages 로 호출
+const stateLabel = { GREET: '인사', LISTEN: '대기', ANSWER: '답변', VERIFY: '본인 확인', CALM: '진정 응대', HANDOFF: '사장님 연결', CLOSE: '마무리' };
+let chatId = null, chatShown = 0, chatBusy = false;
+function newChat() {
+  chatId = 'demo-' + Math.random().toString(36).slice(2, 10); chatShown = 0;
+  $('chatLog').replaceChildren(h('div', { className: 'typing', textContent: '고객이 채널톡 상담 버튼을 눌렀어요. 메시지를 보내 보세요.' }));
+  $('chatState').textContent = '대기'; $('chatHandoff').hidden = true; $('chatEndBtn').disabled = true;
+}
+function renderChat(d) {
+  $('chatLog').querySelector('.typing')?.remove();
+  for (const m of d.transcript.slice(chatShown)) $('chatLog').append(h('div', { className: `bubble ${m.role}`, textContent: m.text }));
+  chatShown = d.transcript.length;
+  $('chatState').textContent = stateLabel[d.state] || d.state;
+  $('chatHandoff').hidden = !d.handed_off;
+  $('chatEndBtn').disabled = d.ended;
+  $('chatLog').scrollTop = 1e9;
+  if (d.card) renderCard(d.card);
+}
+async function sendChat(text) {
+  if (chatBusy) return toast('AI가 답하는 중이에요.');
+  chatBusy = true;
+  $('chatLog').querySelector('.typing')?.remove();
+  $('chatLog').append(h('div', { className: 'bubble customer', textContent: text }), h('div', { className: 'typing', textContent: 'AI가 답을 쓰는 중…' }));
+  chatShown++; $('chatLog').scrollTop = 1e9;
+  const t0 = performance.now();
+  try {
+    const r = await fetch(`${API}/chats/${chatId}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || r.status);
+    renderChat(d);
+    if (!d.handed_off) $('chatLog').append(h('div', { className: 'lat', textContent: `답변까지 ${sec(performance.now() - t0)}` }));
+    else if (!d.card) pollChatCard(d.chat_id);
+  } catch (e) { $('chatLog').querySelector('.typing')?.remove(); toast(`전송 실패: ${e.message}`); }
+  finally { chatBusy = false; }
+}
+async function pollChatCard(id) {
+  $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: '사장님께 넘기는 중이에요. AI가 대화를 정리하고 있어요…' }));
+  for (let i = 0; i < 40 && id === chatId; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const d = await (await fetch(`${API}/chats/${id}`)).json();
+    if (d.card) { renderCard(d.card); return toast('사장님께 요약 카드가 도착했어요.'); }
+  }
+}
+async function endChat() {
+  $('chatEndBtn').disabled = true;
+  $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: 'AI가 대화 내용을 정리하고 있어요…' }));
+  const r = await fetch(`${API}/chats/${chatId}/end`, { method: 'POST' });
+  if (!r.ok) return toast('마무리에 실패했어요.');
+  const d = await r.json(); renderChat(d);
+  if (!d.card) $('cardPanel').replaceChildren(h('div', { className: 'empty', textContent: '카드를 만들지 못했어요. 서버 로그를 확인해 주세요.' }));
+}
+$('chatForm').onsubmit = (e) => { e.preventDefault(); const t = $('chatInput').value.trim(); if (!t) return; $('chatInput').value = ''; sendChat(t); };
+document.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => sendChat(b.dataset.chat); });
+$('chatEndBtn').onclick = endChat;
+$('chatNewBtn').onclick = newChat;
+function showTab(chat) {
+  $('tabCall').setAttribute('aria-selected', String(!chat)); $('tabChat').setAttribute('aria-selected', String(chat));
+  $('phonePane').hidden = chat; $('chatPane').hidden = !chat;
+  if (chat && call && !ended) hangUp(); // 채널을 바꾸면 진행 중인 통화는 종료
+  if (chat) $('chatInput').focus();
+}
+$('tabCall').onclick = () => showTab(false);
+$('tabChat').onclick = () => showTab(true);
+newChat();
+
+// ---------- 입력 ----------
+$('callBtn').onclick = startCall;
+$('hangBtn').onclick = hangUp;
+$('textForm').onsubmit = (e) => { e.preventDefault(); const t = $('textInput').value.trim(); if (!t) return; $('textInput').value = ''; sendText(t); };
+document.querySelectorAll('[data-say]').forEach((b) => { b.onclick = () => sendText(b.dataset.say); });
+
+loadSettings().then(pickVoice).catch(() => toast('서버에 연결할 수 없어요.'));
+</script>
+</body>
+</html>
