@@ -1,5 +1,5 @@
 /* ============================================================
-   감정방패 — 공용 데이터 저장소
+   사장님 마음지키미 — 공용 데이터 저장소
    초기 데이터 없음. 문의를 넣을 때마다 쌓이고,
    모든 화면(현황·문의·채널·고객)이 이 하나를 읽는다.
    페이지가 나뉘어 있으므로 localStorage로 공유한다.
@@ -81,13 +81,19 @@ const Store = {
   applyMe(me) {
     let d = this.load();
     /* 다른 매장으로 로그인하면 이전 매장 데이터를 버리고 빈 상태(더미 없이)에서 시작 */
-    if (d.tenantId !== me.tenant.id) d = Object.assign(this.blank(), { tenantId: me.tenant.id });
-    Object.assign(d.settings, {
+    const changed = d.tenantId !== me.tenant.id;
+    if (changed) d = Object.assign(this.blank(), { tenantId: me.tenant.id });
+    const tplBiz = { online_shop: 'retail', food_beverage: 'food', beauty: 'beauty', other: 'etc' }[me.setup && me.setup.template];
+    const nextSettings = {
       storeName: me.tenant.name,
       email: me.user.email,
       onboarded: !!me.setup.done,
       integrations: me.integrations || {}
-    });
+    };
+    if (tplBiz && (changed || !d.settings.bizType || d.settings.bizType === CONFIG.defaults.bizType)) {
+      nextSettings.bizType = tplBiz;
+    }
+    Object.assign(d.settings, nextSettings);
     return this.save(d);
   },
 

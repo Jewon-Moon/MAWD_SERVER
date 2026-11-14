@@ -1,5 +1,5 @@
 /* ============================================================
-   감정방패 — 백엔드(MAWD API) 연결
+   사장님 마음지키미 — 백엔드(MAWD API) 연결
    로그인 토큰은 localStorage 에 두고 Authorization: Bearer 로 보낸다.
    서버 주소: localhost 에서 열면 로컬 서버, 아니면 운영 서버.
    바꾸려면 콘솔에서 localStorage.setItem('mawd.api', 'https://...')
