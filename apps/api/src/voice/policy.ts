@@ -73,7 +73,7 @@ export function prefilter(text: string, cfg: TenantConfig): Prefilter {
   return {
     abusive,
     heatHint,
-    orderIntent: ORDER_INTENT.some((w) => t.includes(w)) || /\d{4,}/.test(t),
+    orderIntent: ORDER_INTENT.some((w) => t.includes(w)) || /\d{4,}|[A-Za-z]{1,4}\d[A-Za-z0-9]{4,}/.test(t),
     closing: CLOSING.some((w) => t.includes(w)),
     rules,
   };
