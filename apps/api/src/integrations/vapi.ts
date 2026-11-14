@@ -68,8 +68,10 @@ export function vapiAssistantConfig(cfg: TenantConfig, o: { baseUrl: string; web
         ...(v.noise_suppression === 'strong' ? { fourierDenoisingPlan: { enabled: true, mediaDetectionEnabled: true } } : {}),
       },
     }),
-    // 끼어들기를 끈 매장은 고객이 꽤 길게(10단어) 말해야 멈춤 (Vapi에 완전히 끄는 옵션은 없음)
-    stopSpeakingPlan: { numWords: v.barge_in ? 0 : 10 },
+    // 끼어들기를 켠 매장도 0.3초 이상/2단어 이상 발화에만 멈춰 배경 소음으로 인한 오작동을 줄임
+    stopSpeakingPlan: v.barge_in
+      ? { numWords: 2, voiceSeconds: 0.3, backoffSeconds: 0.8 }
+      : { numWords: 10 },
     maxDurationSeconds: v.max_call_minutes * 60,
     server: { url: `${root}/events`, headers },
     serverMessages: ['end-of-call-report', 'status-update'],

@@ -17,6 +17,7 @@ interface TranscriptMsg {
 
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
+  confidence?: number;
 }
 
 interface SpeechRecognitionResultLike {
@@ -192,6 +193,7 @@ export const TestPage: React.FC = () => {
   const ttsPlayingRef = useRef<boolean>(false);
   const mutedRef = useRef<boolean>(muted);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
   const callTapeRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -629,10 +631,18 @@ export const TestPage: React.FC = () => {
     void sendVoiceTurn(txt);
   };
 
+  const releaseMicStream = () => {
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
+    }
+  };
+
   /* ── Web Speech API Mic Toggle ── */
-  const toggleMic = () => {
+  const toggleMic = async () => {
     if (listening && recognitionRef.current) {
       recognitionRef.current.stop();
+      releaseMicStream();
       setListening(false);
       return;
     }
@@ -647,6 +657,23 @@ export const TestPage: React.FC = () => {
       stopTts();
     }
 
+    // 브라우저 하드웨어 에코 제거 · 잡음 억제 · 자동 게인 활성화
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        releaseMicStream();
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+        });
+      } catch {
+        // 권한 거부 등이면 SpeechRecognition 자체 흐름으로 폴백
+      }
+    }
+
     const rec = new Ctor();
     rec.lang = 'ko-KR';
     rec.interimResults = false;
@@ -654,16 +681,23 @@ export const TestPage: React.FC = () => {
 
     rec.onresult = (ev) => {
       const lastIdx = ev.results.length - 1;
-      const transcript = ev.results[lastIdx]?.[0]?.transcript?.trim();
+      const alt = ev.results[lastIdx]?.[0];
+      const transcript = alt?.transcript?.trim();
+      const conf = alt?.confidence;
+      if (typeof conf === 'number' && conf > 0 && conf < 0.35) {
+        return;
+      }
       if (transcript) {
         void sendVoiceTurn(transcript);
       }
     };
     rec.onerror = () => {
+      releaseMicStream();
       setListening(false);
       showToast('음성 인식 중 오류가 발생했습니다');
     };
     rec.onend = () => {
+      releaseMicStream();
       setListening(false);
     };
 

@@ -120,6 +120,7 @@ export interface StoreSettingsSchema {
       instructions: string;
     };
     silence_ms: number;
+    noise_suppression?: 'off' | 'standard' | 'strong';
     barge_in: boolean;
     abuse_turn_limit: number;
     max_call_minutes: number;
