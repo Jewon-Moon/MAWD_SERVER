@@ -141,6 +141,7 @@
   </div>
   <nav role="tablist" aria-label="화면">
     <button role="tab" data-tab="call" aria-selected="true">통화 · 채팅</button>
+    <button role="tab" data-tab="commerce" aria-selected="false">판매처 연동 · 주문</button>
     <button role="tab" data-tab="docs" aria-selected="false">매장 문서</button>
     <button role="tab" data-tab="settings" aria-selected="false">매장 설정</button>
     <button role="tab" data-tab="lists" aria-selected="false">규칙 · FAQ · 문구</button>
@@ -157,6 +158,42 @@
 <main>
   <section data-pane="call">
     <iframe src="/demo" title="통화 · 채팅 데모" allow="microphone; autoplay"></iframe>
+  </section>
+
+  <section data-pane="commerce" hidden>
+    <div class="grid2">
+      <div class="panel">
+        <h2>판매처 연동 <span class="badge real">실제</span></h2>
+        <p class="sub">연동하거나 CSV를 올리면 통합 주문 DB에 바로 반영되어, 통화 · 채팅 AI가 즉시 본인 확인과 주문 조회에 사용합니다.</p>
+        <div id="platformList" class="form"></div>
+      </div>
+      <div class="panel">
+        <h2>주문 CSV 업로드 <span class="badge real">실제</span></h2>
+        <p class="sub">API 제휴 전 플랫폼(무신사 · 에이블리 · 배민 · 쿠팡이츠 · 요기요)이나 자체 쇼핑몰은 판매자센터 엑셀을 CSV로 내려받아 올립니다.</p>
+        <div class="form">
+          <label>판매처 <select id="csvSource"></select></label>
+          <label>CSV 내용 (첫 줄은 헤더)
+            <textarea class="plain" id="csvText" rows="6">주문번호,구매자명,연락처,상품명,결제금액,주문상태,택배사,송장번호,도착예정일
+M202611140001,김고객,010-1111-5678,오버핏 니트 (L),59000,배송중,CJ대한통운,6080-9988-7766,2026-11-16</textarea></label>
+          <div class="row" style="justify-content:flex-end">
+            <button type="button" id="csvPreview">미리보기</button>
+            <button type="button" class="primary" id="csvImport">저장하기</button>
+          </div>
+          <div id="csvResult" class="sub" style="margin:0"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="row" style="justify-content:space-between">
+        <h2>통합 주문 목록 (AI가 읽는 데이터)</h2>
+        <div class="row">
+          <select id="orderSourceFilter" style="width:auto"><option value="">전체 판매처</option></select>
+          <input id="orderSearch" placeholder="주문번호 · 고객명 · 뒷4자리" style="width:200px">
+          <button type="button" id="orderReload">검색</button>
+        </div>
+      </div>
+      <table style="margin-top:10px"><thead><tr><th>판매처</th><th>주문번호</th><th>고객</th><th>연락처</th><th>상품</th><th>금액</th><th>상태</th><th>배송</th></tr></thead><tbody id="orderRows"></tbody></table>
+    </div>
   </section>
 
   <section data-pane="docs" hidden>
@@ -750,6 +787,103 @@ setInterval(pollAlerts, 2000);
 let start = 'call';
 try { start = localStorage.getItem('console-tab') || 'call'; } catch {}
 showTab(document.querySelector(`[data-tab="${start}"]`) ? start : 'call');
+
+// ---------- 판매처 연동 · 주문 ----------
+async function loadCommerce() {
+  const [platforms, conns] = await Promise.all([api('/commerce/platforms'), api('/commerce/connections')]);
+  const bySource = new Map(conns.map((c) => [c.source, c]));
+
+  const srcOpts = platforms.map((p) => h('option', { value: p.source, textContent: p.label }));
+  if (!$('csvSource').options.length) {
+    $('csvSource').replaceChildren(...srcOpts.map((o) => o.cloneNode(true)));
+    $('csvSource').value = 'musinsa';
+    $('orderSourceFilter').replaceChildren(h('option', { value: '', textContent: '전체 판매처' }), ...srcOpts);
+  }
+
+  $('platformList').replaceChildren(...platforms.map((p) => {
+    const c = bySource.get(p.source);
+    const inputs = {};
+    const statusPill = c
+      ? h('span', { className: `pill ${c.status === 'error' ? 'off' : 'on'}`, textContent: `${c.mode.toUpperCase()} · ${c.order_count}건` })
+      : h('span', { className: 'pill', textContent: '미연동' });
+    const btns = [];
+    if (p.modes.includes('demo')) {
+      btns.push(h('button', {
+        type: 'button', textContent: c?.mode === 'demo' ? '다시 동기화' : '데모 연동',
+        onclick: async () => {
+          try {
+            if (c?.mode === 'demo') await api(`/commerce/connections/${p.source}/sync`, { method: 'POST' });
+            else await api(`/commerce/connections/${p.source}`, { method: 'PUT', body: { mode: 'demo' } });
+            toast(`${p.label} 반영됨`);
+            await loadCommerce();
+          } catch (e) { toast(e.message, true); }
+        },
+      }));
+    }
+    if (p.modes.includes('api')) {
+      btns.push(h('button', {
+        type: 'button', className: 'primary', textContent: 'API 저장 · 동기화',
+        onclick: async () => {
+          try {
+            const credentials = Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()]).filter(([, v]) => v));
+            await api(`/commerce/connections/${p.source}`, { method: 'PUT', body: { mode: 'api', credentials } });
+            toast(`${p.label} API 연동 완료`);
+            await loadCommerce();
+          } catch (e) { toast(e.message, true); }
+        },
+      }));
+    }
+    if (c) {
+      btns.push(h('button', {
+        type: 'button', className: 'danger', textContent: '해제',
+        onclick: async () => {
+          await api(`/commerce/connections/${p.source}`, { method: 'DELETE' }).catch((e) => toast(e.message, true));
+          loadCommerce();
+        },
+      }));
+    }
+    const card = h('div', { style: 'border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px' },
+      h('div', { className: 'row', style: 'justify-content:space-between' }, h('b', { textContent: p.label }), statusPill),
+      h('div', { className: 'sub', style: 'margin:0', textContent: p.note + (c?.last_error ? ` · 오류: ${c.last_error}` : '') }),
+      ...p.credential_fields.map((f) => {
+        const inp = h('input', { type: f.secret ? 'password' : 'text', placeholder: `${f.label}${f.required ? ' *' : ''}` });
+        inputs[f.key] = inp;
+        return inp;
+      }),
+      h('div', { className: 'row' }, ...btns));
+    return card;
+  }));
+
+  await loadOrders();
+}
+async function loadOrders() {
+  const qs = new URLSearchParams({ limit: '50' });
+  if ($('orderSourceFilter').value) qs.set('source', $('orderSourceFilter').value);
+  if ($('orderSearch').value.trim()) qs.set('q', $('orderSearch').value.trim());
+  const { items } = await api(`/orders?${qs}`);
+  $('orderRows').replaceChildren(...(items.length ? items.map((o) => h('tr', {},
+    h('td', { textContent: o.platform }),
+    h('td', {}, h('code', { textContent: o.order_no })),
+    h('td', { textContent: o.customer_name }),
+    h('td', { textContent: o.phone_masked }),
+    h('td', { textContent: o.items }),
+    h('td', { textContent: o.amount ? o.amount.toLocaleString('ko-KR') + '원' : '-' }),
+    h('td', { textContent: o.status }),
+    h('td', { textContent: [o.carrier, o.tracking_no, o.eta && `예정 ${o.eta}`].filter(Boolean).join(' · ') || '-' })))
+    : [h('tr', {}, h('td', { colSpan: 8, textContent: '주문이 없습니다. 위에서 데모 연동이나 CSV 업로드를 해보세요.' }))]));
+}
+async function runCsv(dryRun) {
+  try {
+    const r = await api('/orders/import', { method: 'POST', body: { source: $('csvSource').value, csv: $('csvText').value, dry_run: dryRun } });
+    $('csvResult').textContent = `${dryRun ? '미리보기' : '저장 완료'}: ${r.imported}건, 건너뜀 ${r.skipped}건` + (r.errors.length ? ` (${r.errors.slice(0, 3).join(', ')})` : '');
+    if (!dryRun) await loadCommerce();
+  } catch (e) { toast(e.message, true); }
+}
+$('csvPreview').onclick = () => runCsv(true);
+$('csvImport').onclick = () => runCsv(false);
+$('orderReload').onclick = () => loadOrders().catch((e) => toast(e.message, true));
+$('orderSourceFilter').onchange = () => loadOrders().catch((e) => toast(e.message, true));
+loaders.commerce = loadCommerce;
 </script>
 </body>
 </html>

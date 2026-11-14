@@ -11,31 +11,27 @@ import type { TenantConfig } from '../tenantConfig.js';
 import { higher, priorityOf, type AlertCenter } from '../alerts.js';
 import type { Bivia } from '../integrations/bivia.js';
 import { judge } from './judge.js';
+import { createRag, type Rag } from '../knowledge/rag.js';
+import type { Tracker } from '../integrations/tracker.js';
+import type { CommerceService } from '../commerce/service.js';
+import { PLATFORMS } from '../commerce/types.js';
 import { createContextStore } from '../context/docs.js';
 import { ApiError } from '../errors.js';
-import { createOrderTools, leaksPii, newVerifyState } from '../tools/orders.js';
+import { createOrderTools, extractOrderNo, leaksPii, newVerifyState } from '../tools/orders.js';
 import { decideTurn, handoffTemplate, prefilter, renderTemplate, type CallSession, type TurnPlan } from './policy.js';
 import { SentenceSplitter } from './sentences.js';
 
 type Db = ReturnType<typeof createDb>;
-export type TurnDeps = { db: Db; llm: Llm; cfg: TenantConfig; now?: () => Date; alerts?: AlertCenter; bivia?: Bivia };
+export type TurnDeps = { db: Db; llm: Llm; cfg: TenantConfig; now?: () => Date; alerts?: AlertCenter; bivia?: Bivia; rag?: Rag; tracker?: Tracker; commerce?: CommerceService };
 
 const HANDOFF_MARK = '[HANDOFF]';
 const FORMALITY = { formal: '하십시오체', polite: '해요체', casual: '반말' } as const;
 
-/** 정책 근거: FAQ + 정책 문서 조각 (pg_trgm 유사도 상위 3개) */
-async function retrieve(db: Db, tenantId: string, cfg: TenantConfig, question: string): Promise<string> {
-  const faqs = cfg.faqs.filter((f) => f.enabled).map((f) => `Q: ${f.question}\nA: ${f.answer}`);
-  const chunks = await db.withTenant(tenantId, (tx) =>
-    tx.select({ content: s.docChunks.content }).from(s.docChunks)
-      .orderBy(sql`similarity(${s.docChunks.content}, ${question}) DESC`).limit(3), { readOnly: true });
-  return [...faqs, ...chunks.map((c) => c.content)].join('\n---\n') || '(등록된 근거 없음)';
-}
-
 /** 매장 문서(MD) 블록. brief=요약 카드용 (상품 목록 제외) */
+// 답변에는 매장 소개만 항상 넣고, 상품 · 정책 · FAQ · 올린 문서는 질문에 맞는 것만 [근거]로 (knowledge/rag.ts)
 export function businessContext(cfg: TenantConfig, brief = false): string {
   const c = cfg.context;
-  return (brief ? [c.business, c.policies] : [c.business, c.offerings, c.policies]).map((m) => m.trim()).filter(Boolean).join('\n\n');
+  return (brief ? [c.business, c.policies] : [c.business]).map((m) => m.trim()).filter(Boolean).join('\n\n');
 }
 
 function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: Extract<TurnPlan, { kind: 'llm' }>, grounding: string, orders: unknown[] | null, now: Date): string {
@@ -43,7 +39,7 @@ function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: 
   const sla = renderTemplate(cfg, handoffTemplate(cfg, now), { now }, channel);
   const stateRule = plan.state === 'CALM'
     ? `고객이 화가 난 상태입니다. 공감 한 문장, 요구사항을 정리해 확인하는 한 문장으로 답하세요. 해결을 약속하지 말고, 필요하면 "${sla}"의 취지로 안내하세요.`
-    : `아래 [매장 정보] · [근거]${orders ? ' · [주문 데이터]' : ''} 안에서만 답하세요. 매장이 팔지 않는 상품이나 하지 않는 서비스를 묻으면 없다고 안내하세요. 가격 · 배송비 · 기간 같은 숫자는 적힌 그대로만 말하고, 적혀 있지 않으면 계산하거나 지어내지 마세요. 근거로 답할 수 없거나 환불 · 보상 · 예외 판단이 필요하면 다른 말 없이 정확히 ${HANDOFF_MARK} 만 출력하세요.`;
+    : `아래 [매장 정보] · [근거]${orders ? ' · [주문 데이터]' : ''} 안에서만 답하세요.${orders?.some((o) => typeof o === 'object' && o && 'platform' in o) ? ' 여러 판매처 주문이 있으면 판매처(platform)를 꼭 구분해서 안내하세요.' : ''} 매장이 팔지 않는 상품이나 하지 않는 서비스를 묻으면 없다고 안내하세요. 가격 · 배송비 · 기간 같은 숫자는 적힌 그대로만 말하고, 적혀 있지 않으면 계산하거나 지어내지 마세요. 근거로 답할 수 없거나 환불 · 보상 · 예외 판단이 필요하면 다른 말 없이 정확히 ${HANDOFF_MARK} 만 출력하세요.`;
   return [
     channel === 'call'
       ? `당신은 "${cfg.storeName}"의 전화 상담 AI "${p.assistant_name}"입니다. 지금은 음성 통화 중입니다.`
@@ -103,7 +99,8 @@ const containsBanned = (text: string, cfg: TenantConfig) => cfg.settings.persona
 export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, signal: AbortSignal): AsyncGenerator<CallTurnEvent> {
   const t0 = performance.now();
   const { db, llm, cfg } = deps;
-  const tools = createOrderTools(db, sess.tenantId, cfg.settings['data-access']);
+  const tools = createOrderTools(db, sess.tenantId, cfg.settings['data-access'], deps.tracker, deps.commerce);
+  const rag = deps.rag ?? createRag({ db, embedder: { configured: false, embed: async () => [] } });
   const now = deps.now?.() ?? new Date();
   const tpl = (k: Parameters<typeof renderTemplate>[1]) => renderTemplate(cfg, k, { now }, sess.channel);
   let firstSentenceMs = 0;
@@ -151,11 +148,26 @@ export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, 
     const v = cfg.settings.voice;
     // 조회처럼 시간이 걸리는 턴은 필러를 먼저 말함 (전화만. 채팅은 답을 한 번에 보냄)
     if (sess.channel === 'call' && lookup && v.filler.enabled && v.filler.phrases[0]) yield say(v.filler.phrases[0]);
+    const askedOrderNo = lookup ? extractOrderNo(plan.question) : null;
+    if (lookup && askedOrderNo && deps.commerce && !sess.orderData.some((o) => o.order_no === askedOrderNo)) {
+      await deps.commerce.lookupOrderLive(sess.tenantId, askedOrderNo);
+    }
+    const knownSources = sess.verify.verifiedSource
+      ? [sess.verify.verifiedSource]
+      : [...new Set(sess.orderData.map((o) => o.source).filter((x): x is string => typeof x === 'string'))];
     const [grounding, orders] = await Promise.all([
-      plan.state === 'ANSWER' ? retrieve(db, sess.tenantId, cfg, plan.question) : Promise.resolve(''),
-      lookup ? tools.lookup(sess.verify, sess.inquiryId) : Promise.resolve(null),
+      plan.state === 'ANSWER' ? rag.retrieve(sess.tenantId, cfg, plan.question, knownSources.length ? { sources: knownSources } : undefined).then((r) => r.text) : Promise.resolve(''),
+      // 이미 본인 확인된 고객은 이후 턴에도 이번 대화에서 조회한 본인 주문을 근거로 ("어느 택배사예요?" 같은 후속 질문)
+      lookup ? tools.lookup(sess.verify, sess.inquiryId) : Promise.resolve(sess.verify.verifiedPhone && sess.orderData.length ? sess.orderData.slice(-5) : null),
     ]);
-    if (orders?.length) sess.orderData.push(...orders);
+    if (lookup && orders?.length) {
+      for (const o of orders) {
+        const key = `${o.source ?? 'csv'}:${o.order_no}`;
+        const idx = sess.orderData.findIndex((x) => `${x.source ?? 'csv'}:${x.order_no}` === key);
+        if (idx >= 0) sess.orderData[idx] = o;
+        else sess.orderData.push(o);
+      }
+    }
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt(cfg, sess.channel, plan, grounding, orders, now) },
@@ -168,7 +180,7 @@ export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, 
     const splitter = new SentenceSplitter();
     let blocked = false;
     try {
-      const stream = llm.stream(messages, { tier: 'fast', routing: sess.channel === 'call' ? cfg.settings.ai.routing.voice_reply : cfg.settings.ai.routing.chat_reply, signal: ac.signal, maxTokens: 400 });
+      const stream = llm.stream(messages, { tier: 'fast', model: cfg.settings.ai.model, routing: sess.channel === 'call' ? cfg.settings.ai.routing.voice_reply : cfg.settings.ai.routing.chat_reply, signal: ac.signal, maxTokens: 400 });
       outer: for await (const delta of stream) {
         if (!firstTokenMs) firstTokenMs = Math.round(performance.now() - t0);
         for (const sentence of splitter.push(delta)) {
@@ -241,21 +253,24 @@ export async function finalizeInquiry(sess: CallSession, deps: TurnDeps) {
 /** 대화 종료 후 요약 카드 (F5와 같은 스키마). 욕설 · 감정 표현은 빼고 사실만 */
 export async function buildCallCard(sess: CallSession, deps: TurnDeps) {
   const transcript = sess.history.map((m) => `${m.role === 'user' ? '고객' : 'AI'}: ${m.content}`).join('\n');
+  const orderPlatforms = [...new Set(sess.orderData.map((o) => o.source).filter((x): x is keyof typeof PLATFORMS => typeof x === 'string' && x in PLATFORMS))];
+  const adminPlaces = orderPlatforms.map((src) => `- ${PLATFORMS[src].label}: ${PLATFORMS[src].adminHint}${PLATFORMS[src].adminUrl ? ` (${PLATFORMS[src].adminUrl})` : ''}`).join('\n');
   const card = await deps.llm.json([
     {
       role: 'system',
       content: [
         `${sess.channel === 'call' ? '통화' : '채팅'} 기록을 사장님용 요약 카드로 정리합니다.` + ' 욕설 · 비하 · 감정 표현은 모두 빼고 중립적인 사실만 씁니다.',
-        'demands: 고객 요구사항. facts: 사실관계. [주문 데이터]로 확인된 사실만 source=order_data, 고객 말은 source=customer_claim.',
+        'demands: 고객 요구사항. facts: 사실관계. [주문 데이터]로 확인된 사실만 source=order_data (판매처가 있으면 [쿠팡]처럼 판매처 이름 포함), 고객 말은 source=customer_claim.',
         'recommendations: 사장님이 바로 보낼 수 있는 대응안 2개 이상 (draft는 고객에게 보낼 정중한 문장, 정책 근거가 없으면 policy_ref=null).',
         'heat_label: 보통 / 높음 / 매우 높음 중 하나.',
         `참고 위험 표시: ${[...sess.riskFlags].join(', ') || '없음'}`,
+        adminPlaces && `[판매자센터 처리 위치]\n${adminPlaces}`,
         `[매장 정보]\n${businessContext(deps.cfg, true)}`,
         `[주문 데이터]\n${JSON.stringify(sess.orderData)}`,
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
     },
     { role: 'user', content: transcript || '(대화 없음)' },
-  ], Card, { tier: 'smart', name: 'call_card', jsonSchema: strictJsonSchema(Card) });
+  ], Card, { tier: 'smart', model: deps.cfg.settings.ai.model, routing: deps.cfg.settings.ai.routing.card_summary, name: 'call_card', jsonSchema: strictJsonSchema(Card) });
 
   await deps.db.withTenant(sess.tenantId, async (tx) => {
     await tx.insert(s.cards).values({ tenantId: sess.tenantId, inquiryId: sess.inquiryId, summary: card });

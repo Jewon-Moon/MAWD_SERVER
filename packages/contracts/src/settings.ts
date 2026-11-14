@@ -150,17 +150,21 @@ export const AiSettings = z.object({
     mail_draft: RoutingStrategy,
   }).describe('작업별 라우팅 전략 (비용 / 균형 / 품질)'),
   judge: z.enum(['bivia', 'liner_decisions', 'llm']).describe('고객 발화 판단 엔진. bivia=감정 점수 · 사장님 판단 · 법적 조치 · 문의 분류를 Bivia로 (키 없거나 실패하면 llm), liner_decisions=아직 llm과 같음'),
+  rag: z.object({
+    top_k: z.number().int().min(1).max(20).describe('지식이 클 때 질문마다 가져올 근거 수'),
+    include_all_under_chars: z.number().int().min(0).max(30000).describe('매장 지식(FAQ · 상품 · 정책 · 문서) 전체가 이 글자 수 이하면 검색 없이 다 넣음 (작은 매장은 누락 없이 정확)'),
+  }).describe('매장별 지식 검색 (RAG)'),
   monthly_budget_usd: z.number().min(0).nullable().describe('월 AI 비용 상한. 넘으면 AI 응대를 접수 안내로 낮춤. null = 제한 없음'),
 });
 
 /** 데이터 조회 권한 (F12). 안전장치 S1~S9는 끌 수 없고, 범위만 조정 */
 export const DataAccess = z.object({
   enabled: z.boolean(),
-  tools: z.object({ lookup_order: z.boolean(), find_orders: z.boolean(), customer_history: z.boolean() }),
+  tools: z.object({ lookup_order: z.boolean(), find_orders: z.boolean(), customer_history: z.boolean(), track_shipment: z.boolean().describe('택배사 실시간 배송 조회 (송장번호 · 택배사가 있는 주문)') }),
   verification_methods: z.array(z.enum(['profile_match', 'order_no_last4'])).min(1),
   max_verify_attempts: z.number().int().min(1).max(5),
   max_lookups_per_inquiry: z.number().int().min(1).max(30),
-  exposed_fields: z.array(z.enum(['status', 'eta', 'items', 'amount', 'tracking_no'])).describe('고객에게 말해도 되는 필드'),
+  exposed_fields: z.array(z.enum(['status', 'eta', 'items', 'amount', 'tracking_no', 'carrier', 'delivery'])).describe('고객에게 말해도 되는 필드. delivery=택배사 실시간 배송 상태'),
 });
 
 /** 반복 이슈 감지 (F8) */

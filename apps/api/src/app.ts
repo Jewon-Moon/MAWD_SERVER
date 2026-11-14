@@ -22,8 +22,14 @@ import { createContextStore } from './context/docs.js';
 import { contextRoutes } from './routes/context.js';
 import { createFcm, webPushConfig, type PushSender } from './integrations/fcm.js';
 import { createBivia, type Bivia } from './integrations/bivia.js';
+import { createEmbedder, createRag, type Embedder } from './knowledge/rag.js';
+import { createTracker, type Tracker } from './integrations/tracker.js';
+import { documentRoutes } from './routes/documents.js';
+import { createSecretBox, type SecretBox } from './secrets.js';
+import { createCommerceService } from './commerce/service.js';
+import { commerceRoutes } from './routes/commerce.js';
 
-export async function buildApp(opts: { logger?: boolean; db?: ReturnType<typeof createDb>; llm?: Llm; tts?: Tts; sender?: ChatSender; vapi?: VapiClient; alerts?: AlertCenter; push?: PushSender; bivia?: Bivia } = {}) {
+export async function buildApp(opts: { logger?: boolean; db?: ReturnType<typeof createDb>; llm?: Llm; tts?: Tts; sender?: ChatSender; vapi?: VapiClient; alerts?: AlertCenter; push?: PushSender; bivia?: Bivia; embedder?: Embedder; tracker?: Tracker; secrets?: SecretBox; fetchFn?: typeof fetch; syncIntervalMs?: number } = {}) {
   const app = Fastify({ logger: opts.logger ?? false }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -62,14 +68,23 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   app.addHook('onClose', async () => { if (!opts.db) await db.close(); });
   const llm = opts.llm ?? createLlm();
   const bivia = opts.bivia ?? createBivia();
+  const rag = createRag({ db, embedder: opts.embedder ?? createEmbedder() });
+  const tracker = opts.tracker ?? createTracker();
+  const secrets = opts.secrets ?? createSecretBox();
+  const commerce = createCommerceService({ db, secrets, fetchFn: opts.fetchFn, log: app.log });
+  const syncMs = opts.syncIntervalMs ?? (opts.db ? 0 : Number(process.env.COMMERCE_SYNC_INTERVAL_SEC ?? '300') * 1000);
+  const syncLoop = commerce.startSyncLoop(syncMs);
+  app.addHook('onClose', async () => { syncLoop.stop(); });
   const push = opts.push ?? createFcm(process.env, fetch, (m) => app.log.info(m));
   const alerts = opts.alerts ?? createAlertCenter({ db, push, log: app.log, publicUrl: process.env.PUBLIC_BASE_URL || undefined });
   await app.register(alertRoutes({ db, alerts }), { prefix: '/v1' });
   const context = createContextStore(db);
   await app.register(contextRoutes({ context }), { prefix: '/v1' });
-  await app.register(callRoutes({ db, llm, alerts, bivia, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
-  const chat = createChatService({ db, llm, sender: opts.sender ?? createChannelTalkSender(process.env, (m) => app.log.info(m)), log: app.log, alerts, bivia });
+  await app.register(documentRoutes({ db }), { prefix: '/v1' });
+  await app.register(commerceRoutes({ commerce }), { prefix: '/v1' });
+  await app.register(callRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
+  const chat = createChatService({ db, llm, sender: opts.sender ?? createChannelTalkSender(process.env, (m) => app.log.info(m)), log: app.log, alerts, bivia, rag, tracker, commerce });
   await app.register(channelTalkRoutes({ db, chat }), { prefix: '/v1' });
-  await app.register(vapiRoutes({ db, llm, alerts, bivia, vapi: opts.vapi ?? createVapiClient() }), { prefix: '/v1' });
+  await app.register(vapiRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, vapi: opts.vapi ?? createVapiClient() }), { prefix: '/v1' });
   return app;
 }

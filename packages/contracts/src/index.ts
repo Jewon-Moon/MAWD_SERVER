@@ -1,6 +1,7 @@
 // API 계약 (docs/feature-spec.md §14). 백엔드는 검증 · OpenAPI 생성에, 프론트는 타입에 씁니다.
 import { z } from 'zod';
 import { AlertStyle, Priority } from './settings.js';
+import { CommerceSource } from './commerce.js';
 
 export const ErrorBody = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
@@ -115,20 +116,28 @@ export const Document = z.object({
   source_type: z.enum(['pdf', 'text', 'url', 'faq']),
   chunk_count: z.number().int(),
   enabled: z.boolean(), // false면 답변 근거로 쓰지 않음
+  source: CommerceSource.nullable().describe('이 문서가 적용되는 판매처 (예: 쿠팡 반품 정책). null = 모든 판매처 공통'),
   created_at: isoTime,
 });
-export const DocumentPatch = z.object({ title: z.string().min(1).optional(), enabled: z.boolean().optional() });
+export const DocumentPatch = z.object({ title: z.string().min(1).optional(), enabled: z.boolean().optional(), source: CommerceSource.nullable().optional() });
 export const Order = z.object({
   id,
+  source: CommerceSource,
+  platform: z.string().describe('판매처 이름 (예: 네이버 스마트스토어)'),
   order_no: z.string(),
   customer_name: z.string(),
   phone_masked: z.string(),
   items: z.string(),
   amount: z.number(),
   status: z.string(),
+  raw_status: z.string().nullable().describe('플랫폼 원래 상태 코드'),
+  tracking_no: z.string().nullable(),
+  carrier: z.string().nullable(),
   eta: z.string().nullable(),
+  ordered_at: isoTime.nullable(),
+  synced_at: isoTime.nullable(),
 });
-export const OrderImportResult = z.object({ imported: z.number().int(), skipped: z.number().int(), errors: z.array(z.string()) });
+export const OrderImportResult = z.object({ imported: z.number().int(), skipped: z.number().int(), errors: z.array(z.string()), preview: z.array(Order).optional() });
 
 // --- issues ---
 export const Issue = z.object({
@@ -204,3 +213,4 @@ export type InquiryAction = z.infer<typeof InquiryAction>;
 export type CallTurnEvent = z.infer<typeof CallTurnEvent>;
 
 export * from './settings.js';
+export * from './commerce.js';

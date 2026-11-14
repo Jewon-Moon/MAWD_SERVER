@@ -1,6 +1,5 @@
 // §14.2 전체 엔드포인트의 목 구현. 실제 구현은 기능별 라우트 파일로 하나씩 옮깁니다.
 // shortcut: 인증 없이 모두 데모 매장으로 응답, Better Auth 붙일 때 preHandler로 교체
-import { randomUUID } from 'node:crypto';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import * as C from '@mawd/contracts';
@@ -50,21 +49,7 @@ export const mockRoutes: FastifyPluginAsyncZod = async (app) => {
       return { ...d, status, ai_muted: req.body.type === 'manual' || d.ai_muted };
     });
 
-  // documents / orders
-  const doc = { id: randomUUID(), title: '환불정책.pdf', source_type: 'pdf' as const, chunk_count: 12, enabled: true, created_at: now() };
-  app.get('/documents', { schema: { tags: ['knowledge'], response: { 200: z.array(C.Document) } } }, async () => [doc]);
-  // shortcut: 목은 multipart를 파싱하지 않음, 실제 구현 때 @fastify/multipart 추가
-  app.post('/documents', { schema: { tags: ['knowledge'], response: { 200: C.Document } } }, async () => ({ ...doc, id: randomUUID(), created_at: now() }));
-  app.patch('/documents/:id', { schema: { tags: ['knowledge'], params: idParam, body: C.DocumentPatch, response: { 200: C.Document } } },
-    async (req) => ({ ...doc, id: req.params.id, ...req.body }));
-  app.delete('/documents/:id', { schema: { tags: ['knowledge'], params: idParam, response: { 200: ok } } }, async () => ({ ok: true as const }));
-  app.post('/orders/import', { schema: { tags: ['knowledge'], response: { 200: C.OrderImportResult } } },
-    async () => ({ imported: 120, skipped: 2, errors: ['12행: 주문번호 없음', '57행: 금액 형식 오류'] }));
-  app.get('/orders', { schema: { tags: ['knowledge'], querystring: C.PageQuery, response: { 200: C.Page(C.Order) } } },
-    async () => ({
-      items: [{ id: randomUUID(), order_no: '1234', customer_name: '김고객', phone_masked: '010-****-1234', items: '머그컵 외 1건', amount: 32000, status: '배송중', eta: '2026-11-13' }],
-      next_cursor: null,
-    }));
+  // documents / orders 는 routes/documents.ts · routes/commerce.ts (실제 구현)
 
   // issues
   const issue = { id: 'cccccccc-0000-4000-8000-000000000001', title: '11/12 배송 지연', category: '배송' as const, status: 'suggested' as const, inquiry_count: 4, created_at: now() };

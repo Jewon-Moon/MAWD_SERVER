@@ -14,6 +14,9 @@ import { newVerifyState } from '../tools/orders.js';
 import type { CallSession } from '../voice/policy.js';
 import type { AlertCenter } from '../alerts.js';
 import type { Bivia } from '../integrations/bivia.js';
+import type { Rag } from '../knowledge/rag.js';
+import type { Tracker } from '../integrations/tracker.js';
+import type { CommerceService } from '../commerce/service.js';
 import { createContextStore } from '../context/docs.js';
 import { isOpen } from '../voice/policy.js';
 import { finalizeInquiry, runTurn } from '../voice/turn.js';
@@ -31,12 +34,12 @@ export type ChatSession = CallSession & {
 };
 type Log = { error: (obj: object, msg: string) => void };
 
-export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; log: Log; alerts?: AlertCenter; bivia?: Bivia }) {
+export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; log: Log; alerts?: AlertCenter; bivia?: Bivia; rag?: Rag; tracker?: Tracker; commerce?: CommerceService }) {
   // shortcut: 대화 세션을 프로세스 메모리에 둠 (서버 1대 기준). 여러 대면 Redis + 채팅방별 순서 보장 큐로
   const sessions = new Map<string, Promise<ChatSession>>();
   const closed = new Map<string, ChatSession>(); // 마무리된 대화 (데모 화면이 카드를 읽음). 최근 100개만
   const key = (tenantId: string, chatId: string) => `${tenantId}:${chatId}`;
-  const turnDeps = (sess: ChatSession) => ({ db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, cfg: getTenantConfig(sess.tenantId) });
+  const turnDeps = (sess: ChatSession) => ({ db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(sess.tenantId) });
 
   async function open(tenantId: string, msg: IncomingMessage): Promise<ChatSession> {
     await createContextStore(deps.db).load(tenantId).catch(() => {}); // 매장 문서 최신본

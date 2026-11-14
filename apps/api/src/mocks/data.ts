@@ -73,18 +73,19 @@ export const defaultSettings: AllSettings = {
     recording_notice: true,
   },
   ai: {
-    model: 'liner-claude-router',
+    model: 'liner-gpt-router',
     routing: { chat_reply: 'quality', voice_reply: 'cost', card_summary: 'quality', mail_draft: 'balanced' },
     judge: 'bivia',
+    rag: { top_k: 6, include_all_under_chars: 6000 },
     monthly_budget_usd: null,
   },
   'data-access': {
     enabled: true,
-    tools: { lookup_order: true, find_orders: true, customer_history: true },
+    tools: { lookup_order: true, find_orders: true, customer_history: true, track_shipment: true },
     verification_methods: ['profile_match', 'order_no_last4'],
     max_verify_attempts: 3,
     max_lookups_per_inquiry: 10,
-    exposed_fields: ['status', 'eta', 'items', 'amount', 'tracking_no'],
+    exposed_fields: ['status', 'eta', 'items', 'amount', 'tracking_no', 'carrier', 'delivery'],
   },
   issues: { enabled: true, min_inquiries: 3, window_hours: 24, categories: [], default_recipients: 'involved' },
 };

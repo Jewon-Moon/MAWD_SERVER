@@ -32,5 +32,11 @@ export function createDb(url = process.env.DATABASE_URL, opts: { max?: number } 
     return row?.t ?? null;
   }
 
-  return { withTenant, tenantForUser, tenantForWebhook, close: () => client.end() };
+  /** 커머스 동기화 스케줄러용 (0005). 자동 동기화할 연결이 있는 매장 ID만 */
+  async function tenantsWithConnections(): Promise<string[]> {
+    const rows = await client<{ t: string }[]>`SELECT tenants_with_connections() AS t`;
+    return rows.map((r) => r.t);
+  }
+
+  return { withTenant, tenantForUser, tenantForWebhook, tenantsWithConnections, close: () => client.end() };
 }

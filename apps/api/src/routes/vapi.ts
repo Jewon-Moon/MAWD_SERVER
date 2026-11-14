@@ -12,6 +12,9 @@ import type { createDb } from '../db/client.js';
 import * as s from '../db/schema.js';
 import type { AlertCenter } from '../alerts.js';
 import type { Bivia } from '../integrations/bivia.js';
+import type { Rag } from '../knowledge/rag.js';
+import type { Tracker } from '../integrations/tracker.js';
+import type { CommerceService } from '../commerce/service.js';
 import { ApiError, notFound } from '../errors.js';
 import type { Llm } from '../integrations/llm.js';
 import { SECRET_HEADER, vapiAssistantConfig, type VapiClient } from '../integrations/vapi.js';
@@ -34,7 +37,7 @@ const VapiCallDetail = C.CallDetail.extend({ call_id: z.string() });
 const textOf = (c: unknown): string =>
   typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => (p && typeof p === 'object' && 'text' in p ? String(p.text) : '')).join('') : '';
 
-export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: AlertCenter; bivia?: Bivia; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
+export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: AlertCenter; bivia?: Bivia; rag?: Rag; tracker?: Tracker; commerce?: CommerceService; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
   const env = deps.env ?? process.env;
   // shortcut: 통화 세션을 프로세스 메모리에 둠 (서버 1대 기준, 종료 30분 뒤 삭제). 여러 대면 Redis
   const sessions = new Map<string, Sess>(); // Vapi call id → 세션
@@ -54,7 +57,7 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
     if (sess.finalized) return;
     sess.finalized = true; sess.ended = true; sess.state = 'CLOSE';
     sess.current?.abort();
-    finalizeInquiry(sess, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, cfg: getTenantConfig(sess.tenantId) })
+    finalizeInquiry(sess, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(sess.tenantId) })
       .then((card) => { sess.card = card; })
       .catch((err) => log.error({ err, call: sess.id }, 'vapi call card failed'));
     setTimeout(() => sessions.delete(sess.id), 30 * 60_000).unref();
@@ -97,7 +100,7 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
       try {
         if (greeting) say(greeting);
         else if (userText && !sess.ended) {
-          for await (const e of runTurn(sess, userText, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, cfg: getTenantConfig(tenantId) }, ac.signal)) {
+          for await (const e of runTurn(sess, userText, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(tenantId) }, ac.signal)) {
             if (ac.signal.aborted) break;
             // 종료 턴(state=CLOSE)의 마지막 인사는 Vapi 통화 제어로 "다 읽고 끊기" → 응답 본문에는 싣지 않음
             if (e.type === 'sentence') (sess.state === 'CLOSE' && sess.controlUrl ? closing.push(e.text) : say(e.text));

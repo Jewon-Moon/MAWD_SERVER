@@ -98,6 +98,8 @@ export const documents = pgTable('documents', {
   tenantId: uuid('tenant_id').notNull(),
   title: text('title').notNull(),
   sourceType: text('source_type', { enum: ['pdf', 'text', 'url', 'faq'] }).notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  source: text('source'), // 0005: 적용 판매처, NULL = 공통
   createdAt: createdAt(),
 });
 
@@ -120,9 +122,26 @@ export const orders = pgTable('orders', {
   orderedAt: timestamp('ordered_at', { withTimezone: true }),
   status: text('status'),
   trackingNo: text('tracking_no'),
+  carrier: text('carrier'),
   eta: date('eta'),
   raw: jsonb('raw'),
+  source: text('source').notNull().default('csv'), // 0005
+  rawStatus: text('raw_status'),
+  syncedAt: timestamp('synced_at', { withTimezone: true }),
 });
+
+// drizzle/0005_commerce.sql
+export const storeConnections = pgTable('store_connections', {
+  tenantId: uuid('tenant_id').notNull(),
+  source: text('source').notNull(),
+  mode: text('mode', { enum: ['api', 'demo', 'file'] }).notNull(),
+  status: text('status', { enum: ['connected', 'error', 'disabled'] }).notNull().default('connected'),
+  syncCursor: timestamp('sync_cursor', { withTimezone: true }),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.tenantId, t.source] })]);
 
 // drizzle/0002_alerts.sql
 export const alerts = pgTable('alerts', {
