@@ -10,6 +10,7 @@ import { notFound } from '../errors.js';
 import type { ChatSender } from '../integrations/channeltalk.js';
 import type { InstagramService } from '../sns/instagram.js';
 import { getTenantConfig } from '../tenantConfig.js';
+import { prefilter } from '../voice/policy.js';
 
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
@@ -39,20 +40,23 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
           lastReply.set(m.inquiryId, { text: m.text, at: m.createdAt.toISOString() });
         }
       }
+      const cfg = getTenantConfig(tenantId);
       return rows.map((r) => {
         const heat = a.get(r.id)?.heat ?? null;
         const card = c.get(r.id)?.summary as z.infer<typeof C.Card> | undefined;
         const previewRaw = (text.get(r.id) ?? '').slice(0, 500);
         const rep = lastReply.get(r.id);
         const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none'; abusive?: boolean };
-        const maskedSns = r.channel === 'sns' && (raw.action === 'hidden' || raw.abusive === true);
-        const preview = maskedSns
+        const ch = r.channel === 'sns' ? 'sns' : r.channel === 'call' ? 'call' : 'chat';
+        const hasAbuse = raw.action === 'hidden' || raw.abusive === true || prefilter(previewRaw, cfg, ch).abusive;
+        const masked = hasAbuse && (!card || r.channel === 'sns');
+        const preview = masked
           ? '부적절한 표현이 포함되어 요약본에서 가려졌습니다. 상세 화면의 원문 보기에서 확인할 수 있습니다.'
           : previewRaw;
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
-          title: maskedSns
-            ? (raw.action === 'hidden' ? '숨김 처리된 악성 댓글' : '부적절한 표현 포함 댓글')
+          title: masked
+            ? (raw.action === 'hidden' ? '숨김 처리된 악성 댓글' : '부적절한 표현 포함 문의')
             : (card?.title || preview.slice(0, 40) || '(내용 없음)'),
           customer_name: r.customerName,
           category: raw.category || a.get(r.id)?.category || '기타', heat_label: labelOf(tenantId, heat), heat, preview,
@@ -110,7 +114,18 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
       async (req) => detail(tenantOf(req), req.params.id));
 
     app.get('/inquiries/:id/messages', { schema: { tags: ['inquiries'], params: idParam, querystring: C.RawMessagesQuery, response: { 200: z.array(C.Message) } } },
-      async (req) => (await detail(tenantOf(req), req.params.id)).messages);
+      async (req) => {
+        const t = tenantOf(req);
+        const d = await detail(t, req.params.id);
+        if (req.query.raw) return d.messages;
+        const cfg = getTenantConfig(t);
+        const ch = d.channel === 'sns' ? 'sns' : d.channel === 'call' ? 'call' : 'chat';
+        return d.messages.map((m) => (
+          m.sender === 'customer' && prefilter(m.text, cfg, ch).abusive
+            ? { ...m, text: '[부적절한 표현이 포함된 발화입니다]' }
+            : m
+        ));
+      });
 
     app.post('/inquiries/:id/actions', {
       schema: { tags: ['inquiries'], params: idParam, body: C.InquiryAction, response: { 200: C.InquiryDetail }, description: '사장님 처리: 추천 답변 승인 · 고쳐서 보내기 · 직접 응대(AI 끔) · 보류 · 종료' },
