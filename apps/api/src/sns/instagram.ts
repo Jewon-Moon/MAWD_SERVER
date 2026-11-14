@@ -164,7 +164,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     const [acct] = await deps.db.withTenant(tenantId, (tx) => tx.select().from(s.instagramAccounts), { readOnly: true });
     if (!acct) throw new ApiError(400, 'instagram_not_connected', '인스타그램이 연결되어 있지 않습니다.');
     const { token, client } = await credOf(tenantId);
-    const media = await client.listMedia(acct.igUserId, token, 10);
+    const media = await client.listMedia(acct.igUserId, token, 20);
     const existing = await deps.db.withTenant(tenantId, (tx) =>
       tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.channel, 'sns')),
       { readOnly: true }
@@ -176,7 +176,10 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     let skipped = 0;
 
     for (const m of media) {
-      const comments = await client.listComments(m.id, token, 25).catch(() => []);
+      const comments = await client.listComments(m.id, token, 50).catch((err) => {
+        deps.log?.error({ err, mediaId: m.id }, 'instagram listComments failed');
+        return [];
+      });
       for (const cm of comments) {
         fetched += 1;
         const text = (cm.text ?? '').trim().slice(0, 2200);

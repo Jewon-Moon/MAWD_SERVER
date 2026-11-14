@@ -30,13 +30,27 @@ export function createInstagramClient(fetchFn: typeof fetch = fetch, base = GRAP
     /** 최근 게시물 목록 (댓글 수동/폴링 동기화용) */
     listMedia: (igUserId: string, token: string, limit = 10) =>
       call<{ data?: { id: string }[] }>(`${igUserId}/media`, token, { query: { fields: 'id', limit: String(limit) } }).then((r) => r.data ?? []),
-    /** 게시물의 댓글 목록 */
-    listComments: (mediaId: string, token: string, limit = 25) =>
-      call<{ data?: { id: string; text?: string; username?: string; from?: { id?: string; username?: string }; parent_id?: string }[] }>(
+    /** 게시물의 댓글 목록 (대댓글 포함) */
+    listComments: (mediaId: string, token: string, limit = 50) =>
+      call<{
+        data?: {
+          id: string;
+          text?: string;
+          username?: string;
+          from?: { id?: string; username?: string };
+          parent_id?: string;
+          replies?: { data?: { id: string; text?: string; username?: string; from?: { id?: string; username?: string }; parent_id?: string }[] };
+        }[];
+      }>(
         `${mediaId}/comments`,
         token,
-        { query: { fields: 'id,text,username,from,parent_id', limit: String(limit) } }
-      ).then((r) => r.data ?? []),
+        { query: { fields: 'id,text,username,from,parent_id,replies{id,text,username,from,parent_id}', limit: String(limit) } }
+      ).then((r) =>
+        (r.data ?? []).flatMap((c) => [
+          c,
+          ...(c.replies?.data ?? []).map((rep) => ({ ...rep, parent_id: rep.parent_id ?? c.id })),
+        ])
+      ),
   };
 }
 
