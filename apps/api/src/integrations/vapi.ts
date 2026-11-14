@@ -14,8 +14,14 @@ const SUPPORT_TERMS = ['재질', '소재', '촉감', '디자인', '감각', '색
 function vapiVoice(v: TenantConfig['settings']['voice']) {
   const { provider, voice_id, model } = v.vapi_voice;
   const rate = v.tts.rate;
-  if (provider === 'azure') return { provider, voiceId: voice_id, speed: Math.min(2, Math.max(0.5, rate)) };
-  if (provider === '11labs') return { provider, voiceId: voice_id, model: model || 'eleven_flash_v2_5', language: 'ko', speed: Math.min(1.2, Math.max(0.7, rate)) };
+  if (provider === 'azure') {
+    const azureVoice = /^[a-z]{2}-[A-Z]{2}-.+Neural$/.test(voice_id) ? voice_id : 'ko-KR-SunHiNeural';
+    return { provider, voiceId: azureVoice, speed: Math.min(2, Math.max(0.5, rate)) };
+  }
+  if (provider === '11labs') {
+    const elevenVoice = /^[a-z]{2}-[A-Z]{2}-/.test(voice_id) || VAPI_OPENAI_VOICES.has(voice_id) ? 'EXAVITQu4vr4xnSDxMaL' : voice_id;
+    return { provider, voiceId: elevenVoice, model: model || 'eleven_flash_v2_5', language: 'ko', speed: Math.min(1.2, Math.max(0.7, rate)) };
+  }
   return {
     provider: 'openai', model: 'gpt-4o-mini-tts', voiceId: VAPI_OPENAI_VOICES.has(voice_id) ? voice_id : 'marin',
     speed: rate, ...(v.tts.instructions ? { instructions: v.tts.instructions } : {}),
@@ -34,7 +40,6 @@ function transcriberOf(cfg: TenantConfig) {
       provider: 'deepgram',
       model: 'nova-3',
       language: 'ko',
-      smartFormat: true,
       endpointing: Math.min(1000, Math.max(500, Math.round(cfg.settings.voice.silence_ms / 2))),
       keyterm: terms,
     };

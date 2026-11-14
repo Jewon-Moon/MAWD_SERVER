@@ -101,7 +101,7 @@ describe('Vapi 어시스턴트 동기화', () => {
     expect(b.model).toMatchObject({ provider: 'custom-llm', url: 'https://demo.example.com/v1/vapi/demo-token', headers: { 'x-mawd-secret': 'vapi-secret' } });
     expect(b.server.url).toBe('https://demo.example.com/v1/vapi/demo-token/events');
     expect(b.voice).toEqual({ provider: 'azure', voiceId: 'ko-KR-SunHiNeural', speed: 1.2 }); // 기본: 한국어 원어민 음성
-    expect(b.transcriber).toMatchObject({ provider: 'deepgram', model: 'nova-3', language: 'ko', smartFormat: true, endpointing: 600 });
+    expect(b.transcriber).toMatchObject({ provider: 'deepgram', model: 'nova-3', language: 'ko', endpointing: 600 });
     expect(b.transcriber.keyterm).toEqual(expect.arrayContaining(['재질', '교환', '머그컵', '텀블러'])); // 상담 단어 + 매장 상품명
     // 문장부호 없이 끝나면 silence_ms(기본 1200ms)만큼 기다려 숨 고르는 사이에 끊지 않음
     expect(b.startSpeakingPlan.transcriptionEndpointingPlan).toMatchObject({ onNoPunctuationSeconds: 1.2, onNumberSeconds: 1.2 });
