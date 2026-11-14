@@ -549,8 +549,8 @@ export const CONFIG = {
       },
       instagram: {
         enabled: true,
-        auto_hide: 'abusive',
-        hide_heat_gte: 80,
+        auto_hide: 'abusive_or_heated',
+        hide_heat_gte: 70,
         auto_reply: true,
       },
       notifications: {

@@ -10,7 +10,7 @@ import { notFound } from '../errors.js';
 import type { ChatSender } from '../integrations/channeltalk.js';
 import type { InstagramService } from '../sns/instagram.js';
 import { getTenantConfig } from '../tenantConfig.js';
-import { prefilter } from '../voice/policy.js';
+import { extractIntentSummary, prefilter } from '../voice/policy.js';
 
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
@@ -46,20 +46,23 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
         const card = c.get(r.id)?.summary as z.infer<typeof C.Card> | undefined;
         const previewRaw = (text.get(r.id) ?? '').slice(0, 500);
         const rep = lastReply.get(r.id);
-        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none'; abusive?: boolean };
+        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none'; abusive?: boolean; intent_title?: string; intent_summary?: string };
         const ch = r.channel === 'sns' ? 'sns' : r.channel === 'call' ? 'call' : 'chat';
+        const category = raw.category || a.get(r.id)?.category || '기타';
         const hasAbuse = raw.action === 'hidden' || raw.abusive === true || prefilter(previewRaw, cfg, ch).abusive;
         const masked = hasAbuse && (!card || r.channel === 'sns');
+        const extracted = masked ? extractIntentSummary(previewRaw, category) : null;
+        const cardIntent = card ? [card.title, ...(card.demands ?? [])].filter(Boolean).join(' · ') : '';
         const preview = masked
-          ? '부적절한 표현이 포함되어 요약본에서 가려졌습니다. 상세 화면의 원문 보기에서 확인할 수 있습니다.'
+          ? (cardIntent || raw.intent_summary || extracted!.summary)
           : previewRaw;
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
           title: masked
-            ? (raw.action === 'hidden' ? '숨김 처리된 악성 댓글' : '부적절한 표현 포함 문의')
+            ? (card?.title || raw.intent_title || extracted!.title)
             : (card?.title || preview.slice(0, 40) || '(내용 없음)'),
           customer_name: r.customerName,
-          category: raw.category || a.get(r.id)?.category || '기타', heat_label: labelOf(tenantId, heat), heat, preview,
+          category, heat_label: labelOf(tenantId, heat), heat, preview,
           reply: rep?.text ?? null,
           reply_at: rep?.at ?? null,
           sns_action: raw.action ?? null,

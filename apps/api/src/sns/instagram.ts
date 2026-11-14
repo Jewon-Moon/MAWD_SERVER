@@ -15,7 +15,7 @@ import type { SecretBox } from '../secrets.js';
 import { getTenantConfig, type TenantConfig } from '../tenantConfig.js';
 import { leaksPii, newVerifyState } from '../tools/orders.js';
 import { judge } from '../voice/judge.js';
-import { hasOrderModificationIntent, prefilter, type CallSession } from '../voice/policy.js';
+import { extractIntentSummary, hasOrderModificationIntent, prefilter, type CallSession } from '../voice/policy.js';
 import { businessContext } from '../voice/turn.js';
 
 type Db = ReturnType<typeof createDb>;
@@ -150,6 +150,24 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     } catch (err) { deps.log?.error({ err, comment: c.commentId }, 'instagram action failed'); }
 
     // 문의 기록 (댓글 하나 = 문의 하나). 실제 자동 답글을 달았을 때만 auto_done, 숨김 · 판단 필요 · 미답변은 사장님 확인 대기(pending)
+    const fallbackIntent = extractIntentSummary(c.text, j.category);
+    let intentTitle = fallbackIntent.title;
+    let intentSummary = fallbackIntent.summary;
+    if (abusive || action === 'hidden') {
+      try {
+        let out = '';
+        for await (const d of deps.llm.stream([
+          { role: 'system', content: '고객 댓글에서 욕설·비속어·감정적 비난은 완전히 제거하고, 고객이 실제로 원하거나 불만을 제기한 핵심 의도만 중립적인 한국어 한 문장(40자 이내, 예: "배송 지연으로 인한 환불 요청")으로 요약하세요. "단순 문의", "부적절한 표현" 같은 모호한 말은 금지합니다.' },
+          { role: 'user', content: c.text },
+        ], { tier: 'fast', maxTokens: 80 })) out += d;
+        const clean = out.trim().replace(/\n+/g, ' ');
+        if (clean.length >= 4 && !clean.includes(HANDOFF) && !clean.includes('단순 문의') && !clean.includes('부적절한 표현') && !prefilter(clean, cfg, 'sns').abusive) {
+          intentTitle = clean.slice(0, 40);
+          intentSummary = `고객 의도: ${clean.slice(0, 120)}`;
+        }
+      } catch { /* fallbackIntent 유지 */ }
+    }
+
     const parsedTs = c.timestamp ? new Date(c.timestamp) : null;
     const commentedAt = parsedTs && !Number.isNaN(parsedTs.getTime()) ? parsedTs : new Date();
     const status = action === 'replied' && !needsOwner ? 'auto_done' : 'pending';
@@ -159,7 +177,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
         .returning({ id: s.inquiries.id });
       await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'customer', text: c.text, externalMessageId: c.commentId, createdAt: commentedAt });
       if (reply) await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: reply });
-      await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner, category: j.category, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive, category: j.category, risk_flags: riskFlags, judged_by: j.by } });
+      await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner, category: j.category, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive, category: j.category, risk_flags: riskFlags, judged_by: j.by, intent_title: intentTitle, intent_summary: intentSummary } });
       if (action !== 'none') await tx.insert(s.actions).values({ tenantId, inquiryId: inq!.id, actor: 'ai', type: `instagram_${action}`, payload: { comment_id: c.commentId } });
       return inq!.id;
     });

@@ -389,7 +389,7 @@ export const SnsPage: React.FC = () => {
 
                 {it.snsAction === 'hidden' && revealedHiddenTexts[it.id] === undefined ? (
                   <div className="quote red" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                    <span>부적절한 표현으로 AI가 숨김 처리한 댓글입니다.</span>
+                    <span>{it.text}</span>
                     <button
                       type="button"
                       className="btn ghost sm"

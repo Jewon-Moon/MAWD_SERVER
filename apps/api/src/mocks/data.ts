@@ -93,7 +93,7 @@ export const defaultSettings: AllSettings = {
     exposed_fields: ['status', 'eta', 'items', 'amount', 'tracking_no', 'carrier', 'delivery'],
   },
   issues: { enabled: true, min_inquiries: 3, window_hours: 24, categories: [], default_recipients: 'involved' },
-  instagram: { enabled: true, auto_hide: 'abusive', hide_heat_gte: 80, auto_reply: true },
+  instagram: { enabled: true, auto_hide: 'abusive_or_heated', hide_heat_gte: 70, auto_reply: true },
 };
 
 type Row<T extends z.ZodTypeAny> = z.infer<T>;

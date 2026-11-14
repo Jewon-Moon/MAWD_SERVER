@@ -43,12 +43,24 @@ export type TurnPlan =
   | { kind: 'llm'; state: 'ANSWER' | 'CALM'; lookup: boolean; question: string };
 
 // 즉시 판정용 기본 욕설 목록 (설정 없음). 목록에 없는 변형 · 우회 표현은 Bivia가 뒤에서 잡아 다음 턴부터 반영 (judge.ts)
-const BASE_ABUSE = ['씨발', '시발', '씨바', 'ㅅㅂ', 'ㅆㅂ', '썅', '개새', '병신', 'ㅂㅅ', '좆', '존나', 'ㅈㄴ', '꺼져', '닥쳐', '개같', '미친놈', '미친년', '지랄', 'ㅈㄹ'];
+const BASE_ABUSE = [
+  '씨발', '시발', '씨바', '씨팔', '시팔', '씨ㅂ', '시ㅂ', 'ㅅㅂ', 'ㅆㅂ', 'ㅆㅃ', 'ㅅㅍ',
+  '썅', '썅년', '썅놈', '쌍년', '쌍놈', '개새', '새끼', 'ㅅㄲ', '개자식', '개년', '개놈', '개같', '개판', '개소리', '개지랄',
+  '병신', '병ㅅ', 'ㅂㅅ', 'ㅄ', '등신', '머저리', '쪼다', '멍청', '바보', '한심', '꼴값',
+  '좆', 'ㅈㄲ', '존나', 'ㅈㄴ', '지랄', '지ㄹ', 'ㅈㄹ', '염병', '젠장', '빌어먹', '엿먹', '엿같',
+  '꺼져', 'ㄲㅈ', '닥쳐', 'ㄷㅊ', '아가리', '주둥이',
+  '미친', '미쳤', 'ㅁㅊ', '미친놈', '미친년', '또라이', '돌아이', '쳐먹', '쳐돌',
+  '쓰레기', '양아치', '사기꾼', '사기치', '재수없', '뒤져', '뒈져', '죽여', '죽을래',
+  '창녀', '걸레', '호로자식', '호로새끼', '호로년', '호로놈', '느금', '니미', '애미', '애비',
+];
 // "씨 발", "시.발"처럼 사이에 공백 · 기호를 넣은 우회도 잡도록 글자만 남겨 비교
 const lettersOnly = (t: string) => t.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9]/g, '');
 // 욕설 목록과 글자가 겹치는 일반 단어 (오탐 방지, 설정 아님)
-const INNOCENT = ['시발점', '시발역', '병신년'];
-const ANGER = ['화나', '짜증', '열받', '어이없', '장난하', '당장', '빨리', '몇 번', '도대체', '환불해'];
+const INNOCENT = ['시발점', '시발역', '병신년', '미친듯이', '미친듯'];
+const ANGER = [
+  '화나', '짜증', '열받', '어이없', '장난하', '당장', '빨리', '몇 번', '도대체', '환불해',
+  '미치겠', '최악', '엉망', '실망', '신고', '고소', '소비자원', '거지같', '책임져', '무책임', '양심',
+];
 // 특정 주문을 가리키는 표현만 (본인 확인 필요). "배송비 얼마예요", "주문은 어떻게 해요" 같은 일반 질문은 매장 정보 · FAQ로 바로 답함
 const ORDER_INTENT = ['주문한', '주문했', '내 주문', '제 주문', '주문 내역', '주문내역', '송장', '운송장', '도착', '언제 와', '언제와', '언제 오', '언제쯤 와', '출고', '배송 조회', '배송조회', '배송 현황', '어디쯤'];
 const CLOSING = ['끊을게', '끊겠', '됐어요', '그만할게', '수고하세요', '이만', '알겠습니다 감사'];
@@ -78,7 +90,7 @@ export function prefilter(text: string, cfg: TenantConfig, channel: 'call' | 'ch
   const squeezed = INNOCENT.reduce((acc, w) => acc.replaceAll(w, ''), lettersOnly(t));
   const abusive = BASE_ABUSE.some((w) => squeezed.includes(w));
   const angerHits = ANGER.filter((w) => t.includes(w)).length + (t.match(/!{2,}/g)?.length ?? 0);
-  const heatHint = abusive ? 90 : Math.min(85, angerHits * 30);
+  const heatHint = abusive ? 90 : Math.min(85, angerHits * 35);
   const matchChannel = channel === 'sns' ? 'chat' : channel;
   const rules = cfg.rules
     .filter((r) => r.enabled && (!r.match.channels || r.match.channels.includes(matchChannel)))
@@ -98,6 +110,34 @@ export function prefilter(text: string, cfg: TenantConfig, channel: 'call' | 'ch
 }
 
 const safeRegex = (src: string) => { try { return new RegExp(src); } catch { return null; } };
+
+const INTENT_RULES: [RegExp, string][] = [
+  [/배송|택배|송장|운송장|언제\s*와|언제\s*오|도착|출고|안\s*와|늦/, '배송 일정·지연 문의'],
+  [/환불|반품|돌려/, '환불·반품 요청'],
+  [/교환|바꿔/, '상품 교환 요청'],
+  [/취소|주문\s*변경|주소\s*변경|배송지/, '주문 취소·변경 요청'],
+  [/불량|파손|깨졌|찢어|오배송|잘못\s*왔|다른\s*거|재질|소재|촉감|거칠|냄새|마감|하자|품질/, '상품 불량·품질 불만'],
+  [/사이즈|크기|색상|컬러|재고|품절|입고|가격|얼마/, '상품·재고 문의'],
+  [/결제|카드|계좌|입금|쿠폰|할인|영수증/, '결제·할인 문의'],
+  [/영업시간|몇\s*시|위치|주소|매장|방문/, '매장·운영 안내 문의'],
+  [/신고|고소|소송|소비자원|경찰|변호사/, '분쟁·신고 언급 불만'],
+  [/불친절|응대|대응|답변|연락|전화|무시/, '응대·소통 불만'],
+];
+
+/** 부적절한 표현을 가린 뒤, 원문 속에서 고객의 실제 의도(요청/불만 주제)를 뽑아 요약 */
+export function extractIntentSummary(text: string, category?: string | null): { title: string; summary: string } {
+  const t = text.replace(/\s+/g, ' ').trim();
+  const matched = INTENT_RULES.filter(([re]) => re.test(t)).map(([, label]) => label);
+  if (matched.length > 0) {
+    const title = matched.length > 2 ? `${matched.slice(0, 2).join(' · ')} 등` : matched.join(' · ');
+    return { title, summary: `고객 의도: ${matched.join(', ')}` };
+  }
+  const cat = category && category !== '기타' ? category : null;
+  if (cat) {
+    return { title: `${cat} 관련 불만·요청`, summary: `고객 의도: ${cat} 관련 불만 및 확인 요청` };
+  }
+  return { title: '상품·서비스 이용 불만', summary: '고객 의도: 상품 또는 서비스 이용 중 발생한 불만 확인 요청' };
+}
 
 /** 영업시간 판단 (매장 시간대 기준). AI 응대 여부와는 무관하고(24시간 응대), 사장님 연결 안내 문구 · 채팅 AI 대기 전환에만 씀 */
 export function isOpen(hours: TenantConfig['settings']['hours'], now: Date): boolean {

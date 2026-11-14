@@ -32,7 +32,7 @@ export async function judgeWithBivia(s: CallSession, text: string, cfg: TenantCo
       ? bivia.choice({ question: `마지막 고객 문의의 주제는? ${cats.map((c) => `${c.name}${c.description ? `(${c.description})` : ''}`).join(', ')}`, state, choices: cats.map((c) => c.name) })
       : Promise.resolve(null),
     // 대화 전체가 아니라 이번 발화에서만 (AI 말이나 이전 발화를 다시 세지 않게)
-    bivia.span({ question: '욕설, 비속어, 인신공격, 비하 표현', state: text }),
+    bivia.span({ question: '욕설, 비속어, 인신공격, 비하, 조롱, 위협, 반말 폭언 표현', state: text }),
   ]);
   const sure = (r: { status: string; probability: number | null }) => r.status === 'answered' && (r.probability ?? 0) >= min;
   // "사장님 판단 필요" 확률이 1 - min_confidence 이상이면 넘김 (기본 40%). 보류여도 확률이 낮으면 그대로 응대
@@ -54,7 +54,7 @@ export async function judgeWithBivia(s: CallSession, text: string, cfg: TenantCo
 const LlmJudgement = z.object({ heat: z.number(), needs_owner: z.boolean(), abusive: z.boolean(), risk_flags: z.array(z.string()) });
 export async function judgeWithLlm(s: CallSession, text: string, llm: Llm, model?: string): Promise<Judgement> {
   const j = await llm.json([
-    { role: 'system', content: '고객 발화를 판단합니다. heat: 분노 · 공격성 0~100. needs_owner: 금전 보상 · 환불 결정 · 주문 변경 · 배송 방법/배송지 변경 · 취소/예외 요청 · 법적 조치 · 정책 예외 요청처럼 사업자 판단이 필요하면 true. abusive: 마지막 고객 발화에 욕설 · 비속어 · 인신공격 · 비하 표현(변형 · 초성 포함)이 있으면 true. risk_flags: 짧은 한국어 위험 표시 (예: "법적 조치 언급"), 없으면 빈 배열.' },
+    { role: 'system', content: '고객 발화를 엄격하게 판단합니다. heat: 분노 · 공격성 0~100. needs_owner: 금전 보상 · 환불 결정 · 주문 변경 · 배송 방법/배송지 변경 · 취소/예외 요청 · 법적 조치 · 정책 예외 요청처럼 사업자 판단이 필요하면 true. abusive: 마지막 고객 발화에 욕설 · 비속어 · 인신공격 · 비하 · 조롱 · 위협 · 반말 폭언(변형 · 초성 · 은어 포함)이 있으면 true. risk_flags: 짧은 한국어 위험 표시 (예: "법적 조치 언급"), 없으면 빈 배열.' },
     ...s.history.slice(-4),
     { role: 'user', content: text },
   ], LlmJudgement, { tier: 'fast', model, name: 'judgement', jsonSchema: strictJsonSchema(LlmJudgement) });
