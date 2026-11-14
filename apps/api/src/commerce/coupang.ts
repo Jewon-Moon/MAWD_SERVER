@@ -5,7 +5,7 @@ import { createHmac } from 'node:crypto';
 import type { CommerceAdapter, NormalizedOrder } from './types.js';
 import { mergeLines, normalizePhone } from './types.js';
 
-const HOST = 'https://api-gateway.coupang.com';
+const DEFAULT_HOST = 'https://api-gateway.coupang.com';
 type Creds = { vendor_id: string; access_key: string; secret_key: string };
 
 // 발주서 상태: 결제완료 → 상품준비중 → 배송지시 → 배송중 → 배송완료 (업체 직접 배송은 NONE_TRACKING)
@@ -50,7 +50,8 @@ export function normalizeCoupang(s: Sheet): NormalizedOrder[] {
 
 const ymd = (d: Date) => new Date(d.getTime() + 9 * 3600_000).toISOString().slice(0, 10);
 
-export function createCoupangAdapter(creds: Creds, fetchFn: typeof fetch = fetch): CommerceAdapter {
+export function createCoupangAdapter(creds: Creds, fetchFn: typeof fetch = fetch, host = process.env.COUPANG_API_BASE?.trim() || DEFAULT_HOST): CommerceAdapter {
+  const HOST = host.replace(/\/$/, '');
   const vendorPath = `/v2/providers/openapi/apis/api/v4/vendors/${encodeURIComponent(creds.vendor_id)}`;
 
   async function call<T>(path: string, params: Record<string, string> = {}): Promise<T> {

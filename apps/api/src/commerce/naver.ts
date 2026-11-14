@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import type { CommerceAdapter, NormalizedOrder } from './types.js';
 import { carrierName, mergeLines, normalizePhone } from './types.js';
 
-const BASE = 'https://api.commerce.naver.com/external';
+const DEFAULT_BASE = 'https://api.commerce.naver.com/external';
 type Creds = { client_id: string; client_secret: string; account_id?: string };
 
 const STATUS: Record<string, string> = {
@@ -48,7 +48,8 @@ export function normalizeNaver(d: Detail): NormalizedOrder {
   };
 }
 
-export function createNaverAdapter(creds: Creds, fetchFn: typeof fetch = fetch): CommerceAdapter {
+export function createNaverAdapter(creds: Creds, fetchFn: typeof fetch = fetch, baseUrl = process.env.NAVER_API_BASE?.trim() || DEFAULT_BASE): CommerceAdapter {
+  const BASE = baseUrl.replace(/\/$/, '');
   let token: { value: string; exp: number } | null = null;
 
   async function auth(): Promise<string> {

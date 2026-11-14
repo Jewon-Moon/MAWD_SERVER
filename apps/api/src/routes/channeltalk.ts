@@ -50,11 +50,11 @@ export function channelTalkRoutes(deps: { db: Db; chat: ChatService; env?: NodeJ
       async (req) => toDetail((await deps.chat.get(tenantOf(), req.params.chatId)) ?? notFound('chat_not_found')));
     // 채널톡 없이 같은 처리를 돌려 보는 데모 · 테스트용 입구 (웹훅과 달리 답이 나올 때까지 기다렸다가 대화 상태를 돌려줌)
     app.post('/chats/:chatId/messages', {
-      schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), body: z.object({ text: z.string().min(1).max(2000) }), response: { 200: ChatDetail }, description: '데모: 고객 메시지를 채널톡 웹훅과 같은 경로로 처리. AI 채팅 응대가 꺼진 매장은 409 chat_disabled' },
+      schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), body: z.object({ text: z.string().min(1).max(2000), customer_name: z.string().min(1).max(100).optional() }), response: { 200: ChatDetail }, description: '데모: 고객 메시지를 채널톡 웹훅과 같은 경로로 처리. AI 채팅 응대가 꺼진 매장은 409 chat_disabled' },
     }, async (req) => {
       const { response } = getTenantConfig(tenantOf()).settings;
       if (!response.ai_enabled || !response.channels.chat) throw new ApiError(409, 'chat_disabled', '이 매장은 AI 채팅 응대가 꺼져 있습니다.');
-      await deps.chat.handle(tenantOf(), { chatId: req.params.chatId, text: req.body.text, customerName: '데모 고객', customerPhone: null });
+      await deps.chat.handle(tenantOf(), { chatId: req.params.chatId, text: req.body.text, customerName: req.body.customer_name?.trim() || '데모 고객', customerPhone: null });
       return toDetail((await deps.chat.get(tenantOf(), req.params.chatId)) ?? notFound('chat_not_found'));
     });
     app.post('/chats/:chatId/end', { schema: { tags: ['chats'], params: z.object({ chatId: z.string().min(1).max(100) }), response: { 200: ChatDetail }, description: '대화 마무리 + 요약 카드 생성 (보통은 chat_idle_minutes 뒤 자동)' } },
