@@ -1,7 +1,5 @@
+node_modules
+dist
 .git
-.gitignore
 .DS_Store
-README.md
-Sumnail.png
-Dockerfile
-.dockerignore
+*.log
