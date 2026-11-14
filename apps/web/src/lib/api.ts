@@ -93,9 +93,9 @@ export const Api = {
   startCall: () => Api.req<{ call_id: string; greeting_text?: string }>('/calls', { method: 'POST', body: '{}' }),
   getCall: (id: string) => Api.req(`/calls/${encodeURIComponent(id)}`),
   endCall: (id: string) => Api.req(`/calls/${encodeURIComponent(id)}/end`, { method: 'POST', body: '{}' }),
-  ttsUrl: async (text: string): Promise<string | null> => {
+  ttsUrl: async (text: string, opts?: { voice?: string; speed?: number; instructions?: string }): Promise<string | null> => {
     try {
-      const r = await Api.req<{ url?: string }>('/tts', { method: 'POST', body: JSON.stringify({ text }) });
+      const r = await Api.req<{ url?: string }>('/tts', { method: 'POST', body: JSON.stringify({ text, ...opts }) });
       if (!r || !r.url) return null;
       return r.url.startsWith('http') ? r.url : `${Api.base()}${r.url}`;
     } catch {

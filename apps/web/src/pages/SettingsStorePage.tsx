@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { PushNotificationCard } from '../components/PushNotificationCard';
@@ -91,6 +91,93 @@ export const SettingsStorePage: React.FC = () => {
   const [newQuestion, setNewQuestion] = useState('');
   const [newAnswer, setNewAnswer] = useState('');
   const [faqBusy, setFaqBusy] = useState(false);
+
+  // Voice sample preview state
+  const storeName = data.settings.storeName || CONFIG.brand.owner;
+  const assistantName = data.store.persona?.assistant_name || CONFIG.storeSettings.defaults.persona.assistant_name;
+  const [sampleText, setSampleText] = useState(() => `안녕하세요, ${storeName} AI 상담원 ${assistantName}입니다. 무엇을 도와드릴까요?`);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewSource, setPreviewSource] = useState<string>('');
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopVoiceSample = useCallback(() => {
+    if (sampleAudioRef.current) {
+      sampleAudioRef.current.pause();
+      sampleAudioRef.current.currentTime = 0;
+      sampleAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setPreviewPlaying(false);
+  }, []);
+
+  useEffect(() => {
+    return () => stopVoiceSample();
+  }, [stopVoiceSample, activeSec.id]);
+
+  const playVoiceSample = async () => {
+    if (previewPlaying) {
+      stopVoiceSample();
+      return;
+    }
+    const text = sampleText.trim() || `안녕하세요, ${storeName} AI 상담원 ${assistantName}입니다.`;
+    const v = data.store.voice;
+    const engine = v?.tts?.engine || 'vapi';
+    const rate = v?.tts?.rate ?? 1.15;
+    const pitch = v?.tts?.pitch ?? 1;
+    const instructions = v?.tts?.instructions || '';
+    const vapiProvider = v?.vapi_voice?.provider || 'azure';
+    const vapiVoiceId = v?.vapi_voice?.voice_id || 'ko-KR-SunHiNeural';
+    const openAiVoice = vapiProvider === 'openai' ? vapiVoiceId : (v?.tts?.voice_name || 'coral');
+
+    setPreviewPlaying(true);
+
+    const playBrowser = () => {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        setPreviewPlaying(false);
+        showToast('이 브라우저는 음성 미리듣기를 지원하지 않습니다');
+        return;
+      }
+      setPreviewSource(
+        vapiProvider === 'openai'
+          ? '브라우저 음성으로 재생 중 (서버 TTS 키 미설정)'
+          : `브라우저 기본 음성으로 미리듣기 중 (실제 ${vapiProvider === '11labs' ? 'ElevenLabs' : 'Azure'} 음성은 Vapi 통화에서 재생됩니다)`
+      );
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ko-KR';
+      utter.rate = Math.min(2, Math.max(0.5, rate));
+      utter.pitch = Math.min(2, Math.max(0, pitch));
+      utter.onend = () => setPreviewPlaying(false);
+      utter.onerror = () => setPreviewPlaying(false);
+      window.speechSynthesis.speak(utter);
+    };
+
+    if (engine !== 'browser' && Api.token()) {
+      const url = await Api.ttsUrl(text, { voice: openAiVoice, speed: rate, instructions });
+      if (url) {
+        setPreviewSource(`서버 OpenAI TTS (${openAiVoice})로 샘플 재생 중`);
+        const audio = new Audio(url);
+        sampleAudioRef.current = audio;
+        audio.onended = () => {
+          if (sampleAudioRef.current === audio) sampleAudioRef.current = null;
+          setPreviewPlaying(false);
+        };
+        audio.onerror = () => {
+          if (sampleAudioRef.current === audio) sampleAudioRef.current = null;
+          playBrowser();
+        };
+        try {
+          await audio.play();
+          return;
+        } catch {
+          if (sampleAudioRef.current === audio) sampleAudioRef.current = null;
+        }
+      }
+    }
+
+    playBrowser();
+  };
 
   const loadKnowledge = useCallback(async () => {
     if (!Api.token()) return;
@@ -755,6 +842,33 @@ export const SettingsStorePage: React.FC = () => {
             </>
           ) : (
             <>
+              {activeSec.id === 'voice' && (
+                <div className="card" style={{ marginBottom: 14 }}>
+                  <div className="detail-block-title" style={{ marginBottom: 8 }}>
+                    🔊 목소리 샘플 미리듣기
+                  </div>
+                  <div className="btn-row" style={{ gap: 10 }}>
+                    <input
+                      type="text"
+                      className="input"
+                      style={{ flex: 1, minWidth: 220 }}
+                      value={sampleText}
+                      onChange={(e) => setSampleText(e.target.value)}
+                      placeholder="미리 들어볼 안내 문구를 입력하세요"
+                    />
+                    <button
+                      type="button"
+                      className={`btn sm ${previewPlaying ? 'danger' : ''}`}
+                      onClick={() => void playVoiceSample()}
+                    >
+                      {previewPlaying ? '⏹ 중지' : '▶ 샘플 듣기'}
+                    </button>
+                  </div>
+                  <div className="hint" style={{ marginTop: 8 }}>
+                    {previewSource || '선택한 OpenAI/서버 TTS 목소리와 속도·말투를 바로 들어볼 수 있습니다. (Azure·ElevenLabs 실제 통화 음성은 Vapi 통화 테스트에서 재생됩니다.)'}
+                  </div>
+                </div>
+              )}
               <div className="card">{fields.map((f) => renderField(f))}</div>
               {activeSec.id === 'notifications' && (
                 <div style={{ marginTop: 14 }}>

@@ -47,21 +47,36 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
 
     // <audio src>로 바로 스트리밍 재생하려고 2단계: POST로 문장을 맡기고 받은 id를 GET. 문장(주문 정보 포함 가능)을 URL에 싣지 않기 위함
     // shortcut: 프로세스 메모리, 5분 뒤 삭제 (브라우저가 같은 주소를 다시 요청할 수 있어 GET 후에도 남김)
-    const ttsJobs = new Map<string, { tenantId: string; text: string }>();
+    const ttsJobs = new Map<string, { tenantId: string; text: string; voice?: string; speed?: number; instructions?: string }>();
     app.post('/tts', {
-      schema: { tags: ['calls'], body: z.object({ text: z.string().min(1).max(500) }), response: { 200: z.object({ id: z.string().uuid(), url: z.string() }) }, description: '매장 음성 설정(voice.tts)으로 읽을 문장 등록. 받은 url을 <audio src>에 넣으면 wav를 스트리밍 재생. sentence 이벤트마다 바로 등록하면 앞 문장 재생 중에 다음 문장이 준비됨' },
+      schema: {
+        tags: ['calls'],
+        body: z.object({
+          text: z.string().min(1).max(500),
+          voice: z.string().min(1).max(80).optional(),
+          speed: z.number().min(0.5).max(2).optional(),
+          instructions: z.string().max(500).optional(),
+        }),
+        response: { 200: z.object({ id: z.string().uuid(), url: z.string() }) },
+        description: '매장 음성 설정(voice.tts) 또는 지정한 목소리로 읽을 문장 등록. 받은 url을 <audio src>에 넣으면 wav를 스트리밍 재생.',
+      },
     }, async (req) => {
       const tenantId = tenantOf(req);
-      if (getTenantConfig(tenantId).settings.voice.tts.engine === 'browser') throw new ApiError(409, 'tts_engine_browser', '이 매장은 브라우저 음성을 씁니다.');
+      if (!req.body.voice && getTenantConfig(tenantId).settings.voice.tts.engine === 'browser') throw new ApiError(409, 'tts_engine_browser', '이 매장은 브라우저 음성을 씁니다.');
       if (deps.tts.configured === false) throw new ApiError(409, 'tts_not_configured', '서버 음성 합성 키(TTS_API_KEY)가 없어 브라우저 음성으로 대체합니다.');
       const id = randomUUID();
-      ttsJobs.set(id, { tenantId, text: req.body.text });
+      ttsJobs.set(id, { tenantId, text: req.body.text, voice: req.body.voice, speed: req.body.speed, instructions: req.body.instructions });
       setTimeout(() => ttsJobs.delete(id), 5 * 60_000).unref();
       return { id, url: `/v1/tts/${id}` };
     });
     app.get('/tts/:id', { schema: { tags: ['calls'], params: idParam, description: 'audio/wav 스트림' } }, async (req, reply) => {
       const job = ttsJobs.get(req.params.id) ?? notFound('tts_not_found');
-      const stream = await deps.tts(job.text, ttsOpts(getTenantConfig(job.tenantId).settings.voice));
+      const base = ttsOpts(getTenantConfig(job.tenantId).settings.voice);
+      const stream = await deps.tts(job.text, {
+        voice: job.voice ?? base.voice,
+        speed: job.speed ?? base.speed,
+        instructions: job.instructions ?? base.instructions,
+      });
       return reply.type('audio/wav').header('cache-control', 'private, max-age=300').send(stream);
     });
 
