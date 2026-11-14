@@ -1,14 +1,12 @@
 FROM node:22-slim AS builder
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@12.18.0 --activate
-
 COPY package.json ./
-RUN pnpm install
+RUN npm install --no-audit --no-fund
 
 COPY tsconfig.json vite.config.ts index.html ./
 COPY src ./src
-RUN pnpm build
+RUN npm run build
 
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
