@@ -119,6 +119,12 @@ export interface StoreSettingsSchema {
       pitch: number;
       instructions: string;
     };
+    vapi_voice?: {
+      provider: 'azure' | '11labs' | 'openai';
+      voice_id: string;
+      model: string | null;
+    };
+    transcriber?: 'deepgram' | 'azure' | 'soniox' | 'openai' | '11labs';
     silence_ms: number;
     noise_suppression?: 'off' | 'standard' | 'strong';
     barge_in: boolean;
