@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
+import { PushNotificationCard } from '../components/PushNotificationCard';
 import { useApp } from '../context/AppContext';
 import { Api } from '../lib/api';
 import { CONFIG } from '../lib/config';
@@ -753,7 +754,14 @@ export const SettingsStorePage: React.FC = () => {
               </section>
             </>
           ) : (
-            <div className="card">{fields.map((f) => renderField(f))}</div>
+            <>
+              <div className="card">{fields.map((f) => renderField(f))}</div>
+              {activeSec.id === 'notifications' && (
+                <div style={{ marginTop: 14 }}>
+                  <PushNotificationCard />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

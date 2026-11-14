@@ -77,7 +77,7 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
       let sess = sessions.get(callId);
       let greeting: string | null = null;
       if (!sess) {
-        const started = await startCallSession(deps.db, tenantId, getTenantConfig(tenantId), callId);
+        const started = await startCallSession(deps.db, tenantId, getTenantConfig(tenantId), callId, deps.alerts);
         sess = { ...started.sess, card: null, controlUrl: null, finalized: false };
         sessions.set(callId, sess);
         greeting = started.greeting;

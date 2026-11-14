@@ -54,7 +54,7 @@ export async function judgeWithBivia(s: CallSession, text: string, cfg: TenantCo
 const LlmJudgement = z.object({ heat: z.number(), needs_owner: z.boolean(), abusive: z.boolean(), risk_flags: z.array(z.string()) });
 export async function judgeWithLlm(s: CallSession, text: string, llm: Llm, model?: string): Promise<Judgement> {
   const j = await llm.json([
-    { role: 'system', content: '고객 발화를 판단합니다. heat: 분노 · 공격성 0~100. needs_owner: 금전 보상 · 환불 결정 · 법적 조치 · 정책 예외 요청처럼 사업자 판단이 필요하면 true. abusive: 마지막 고객 발화에 욕설 · 비속어 · 인신공격 · 비하 표현(변형 · 초성 포함)이 있으면 true. risk_flags: 짧은 한국어 위험 표시 (예: "법적 조치 언급"), 없으면 빈 배열.' },
+    { role: 'system', content: '고객 발화를 판단합니다. heat: 분노 · 공격성 0~100. needs_owner: 금전 보상 · 환불 결정 · 주문 변경 · 배송 방법/배송지 변경 · 취소/예외 요청 · 법적 조치 · 정책 예외 요청처럼 사업자 판단이 필요하면 true. abusive: 마지막 고객 발화에 욕설 · 비속어 · 인신공격 · 비하 표현(변형 · 초성 포함)이 있으면 true. risk_flags: 짧은 한국어 위험 표시 (예: "법적 조치 언급"), 없으면 빈 배열.' },
     ...s.history.slice(-4),
     { role: 'user', content: text },
   ], LlmJudgement, { tier: 'fast', model, name: 'judgement', jsonSchema: strictJsonSchema(LlmJudgement) });

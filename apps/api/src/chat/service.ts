@@ -49,6 +49,7 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
       .values({ tenantId, channel: 'chat', status: 'pending', externalChatId: msg.chatId, customerName: msg.customerName })
       .onConflictDoUpdate({ target: [s.inquiries.tenantId, s.inquiries.externalChatId], set: { status: 'pending', updatedAt: new Date() } })
       .returning({ id: s.inquiries.id, aiMuted: s.inquiries.aiMuted }));
+    deps.alerts?.emitEvent?.(tenantId, 'inquiry', { id: inq!.id });
     return {
       id: inq!.id, channel: 'chat', tenantId, inquiryId: inq!.id, chatId: msg.chatId, state: 'LISTEN', verify: newVerifyState(), abuseStreak: 0,
       awaitingVerify: false, pendingQuestion: null, heat: 0, needsOwner: false, riskFlags: new Set(), history: [], turnLatencies: [], orderData: [],
@@ -91,6 +92,7 @@ export function createChatService(deps: { db: Db; llm: Llm; sender: ChatSender; 
         if (sess.state === 'HANDOFF' && isOpen(getTenantConfig(sess.tenantId).settings.hours, new Date())) {
           sess.handedOff = true;
           await deps.db.withTenant(sess.tenantId, (tx) => tx.update(s.inquiries).set({ aiMuted: true }).where(eq(s.inquiries.id, sess.inquiryId)));
+          deps.alerts?.emitEvent?.(sess.tenantId, 'inquiry', { id: sess.inquiryId });
           void finalize(sess); // 카드 생성(수 초)은 기다리지 않음. 사장님 화면은 GET /chats/{id} 로 확인
         }
       }

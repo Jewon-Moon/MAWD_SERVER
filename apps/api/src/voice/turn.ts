@@ -18,7 +18,7 @@ import { PLATFORMS } from '../commerce/types.js';
 import { createContextStore } from '../context/docs.js';
 import { ApiError } from '../errors.js';
 import { createOrderTools, extractOrderNo, leaksPii, newVerifyState } from '../tools/orders.js';
-import { decideTurn, handoffTemplate, prefilter, renderTemplate, type CallSession, type TurnPlan } from './policy.js';
+import { decideTurn, handoffTemplate, hasOrderModificationIntent, prefilter, renderTemplate, type CallSession, type TurnPlan } from './policy.js';
 import { SentenceSplitter } from './sentences.js';
 
 type Db = ReturnType<typeof createDb>;
@@ -39,7 +39,7 @@ function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: 
   const sla = renderTemplate(cfg, handoffTemplate(cfg, now), { now }, channel);
   const stateRule = plan.state === 'CALM'
     ? `고객이 화가 난 상태입니다. 공감 한 문장, 요구사항을 정리해 확인하는 한 문장으로 답하세요. 해결을 약속하지 말고, 필요하면 "${sla}"의 취지로 안내하세요.`
-    : `아래 [매장 정보] · [근거]${orders ? ' · [주문 데이터]' : ''} 안에서만 답하세요.${orders?.some((o) => typeof o === 'object' && o && 'platform' in o) ? ' 여러 판매처 주문이 있으면 판매처(platform)를 꼭 구분해서 안내하세요.' : ''} 매장이 팔지 않는 상품이나 하지 않는 서비스를 묻으면 없다고 안내하세요. 가격 · 배송비 · 기간 같은 숫자는 적힌 그대로만 말하고, 적혀 있지 않으면 계산하거나 지어내지 마세요. 근거로 답할 수 없거나 환불 · 보상 · 예외 판단이 필요하면 다른 말 없이 정확히 ${HANDOFF_MARK} 만 출력하세요.`;
+    : `아래 [매장 정보] · [근거]${orders ? ' · [주문 데이터]' : ''} 안에서만 답하세요.${orders?.some((o) => typeof o === 'object' && o && 'platform' in o) ? ' 여러 판매처 주문이 있으면 판매처(platform)를 꼭 구분해서 안내하세요.' : ''} 매장이 팔지 않는 상품이나 하지 않는 서비스를 묻으면 없다고 안내하세요. 가격 · 배송비 · 기간 같은 숫자는 적힌 그대로만 말하고, 적혀 있지 않으면 계산하거나 지어내지 마세요. 근거로 답할 수 없거나 주문 변경 · 배송 방법 변경(택배→방문수령 등) · 배송지 변경 · 취소/교환/환불 · 보상 · 예외 처리가 포함된 경우 일반 정책으로만 답하지 말고 반드시 다른 말 없이 정확히 ${HANDOFF_MARK} 만 출력하세요.`;
   return [
     channel === 'call'
       ? `당신은 "${cfg.storeName}"의 전화 상담 AI "${p.assistant_name}"입니다. 지금은 음성 통화 중입니다. 고객 말은 음성 인식 결과라 발음이 비슷한 단어로 잘못 적힐 수 있습니다(예: 감각→반박, 재질→기술). 문맥에 맞게 이해하고, 뜻이 애매하면 짧게 되물으세요.`
@@ -155,8 +155,9 @@ export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, 
     const knownSources = sess.verify.verifiedSource
       ? [sess.verify.verifiedSource]
       : [...new Set(sess.orderData.map((o) => o.source).filter((x): x is string => typeof x === 'string'))];
+    const forceHandoff = hasOrderModificationIntent(plan.question);
     const [grounding, orders] = await Promise.all([
-      plan.state === 'ANSWER' ? rag.retrieve(sess.tenantId, cfg, plan.question, knownSources.length ? { sources: knownSources } : undefined).then((r) => r.text) : Promise.resolve(''),
+      plan.state === 'ANSWER' && !forceHandoff ? rag.retrieve(sess.tenantId, cfg, plan.question, knownSources.length ? { sources: knownSources } : undefined).then((r) => r.text) : Promise.resolve(''),
       // 이미 본인 확인된 고객은 이후 턴에도 이번 대화에서 조회한 본인 주문을 근거로 ("어느 택배사예요?" 같은 후속 질문)
       lookup ? tools.lookup(sess.verify, sess.inquiryId) : Promise.resolve(sess.verify.verifiedPhone && sess.orderData.length ? sess.orderData.slice(-5) : null),
     ]);
@@ -169,41 +170,47 @@ export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, 
       }
     }
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt(cfg, sess.channel, plan, grounding, orders, now) },
-      ...sess.history.slice(-12),
-      { role: 'user', content: plan.question },
-    ];
-    const ac = new AbortController();
-    const onAbort = () => ac.abort();
-    signal.addEventListener('abort', onAbort);
-    const splitter = new SentenceSplitter();
-    let blocked = false;
-    try {
-      const stream = llm.stream(messages, { tier: 'fast', model: cfg.settings.ai.model, routing: sess.channel === 'call' ? cfg.settings.ai.routing.voice_reply : cfg.settings.ai.routing.chat_reply, signal: ac.signal, maxTokens: 400 });
-      outer: for await (const delta of stream) {
-        if (!firstTokenMs) firstTokenMs = Math.round(performance.now() - t0);
-        for (const sentence of splitter.push(delta)) {
-          // 근거 없음 · 금지 표현 · 개인정보 노출(S8) → 그 문장을 읽지 않고 사장님 연결로 전환
-          if (sentence.includes(HANDOFF_MARK) || containsBanned(sentence, cfg) || leaksPii(sentence, sess.verify.verifiedPhone)) { blocked = true; break outer; }
-          yield say(sentence);
-        }
-      }
-      if (!blocked) for (const sentence of splitter.flush()) {
-        if (sentence.includes(HANDOFF_MARK) || containsBanned(sentence, cfg) || leaksPii(sentence, sess.verify.verifiedPhone)) { blocked = true; break; }
-        yield say(sentence);
-      }
-    } catch (e) {
-      if (signal.aborted) return; // 끼어들기: 조용히 종료 (다음 턴이 이어받음)
-      blocked = true; // LLM 장애: 고객이 답을 못 받는 일이 없도록 사장님 연결 멘트로 대체
-    } finally {
-      ac.abort();
-      signal.removeEventListener('abort', onAbort);
-    }
-    if (blocked) {
+    if (forceHandoff) {
       sess.needsOwner = true;
       yield setState('HANDOFF');
       yield say(handoffLine());
+    } else {
+      const messages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt(cfg, sess.channel, plan, grounding, orders, now) },
+        ...sess.history.slice(-12),
+        { role: 'user', content: plan.question },
+      ];
+      const ac = new AbortController();
+      const onAbort = () => ac.abort();
+      signal.addEventListener('abort', onAbort);
+      const splitter = new SentenceSplitter();
+      let blocked = false;
+      try {
+        const stream = llm.stream(messages, { tier: 'fast', model: cfg.settings.ai.model, routing: sess.channel === 'call' ? cfg.settings.ai.routing.voice_reply : cfg.settings.ai.routing.chat_reply, signal: ac.signal, maxTokens: 400 });
+        outer: for await (const delta of stream) {
+          if (!firstTokenMs) firstTokenMs = Math.round(performance.now() - t0);
+          for (const sentence of splitter.push(delta)) {
+            // 근거 없음 · 금지 표현 · 개인정보 노출(S8) → 그 문장을 읽지 않고 사장님 연결로 전환
+            if (sentence.includes(HANDOFF_MARK) || containsBanned(sentence, cfg) || leaksPii(sentence, sess.verify.verifiedPhone)) { blocked = true; break outer; }
+            yield say(sentence);
+          }
+        }
+        if (!blocked) for (const sentence of splitter.flush()) {
+          if (sentence.includes(HANDOFF_MARK) || containsBanned(sentence, cfg) || leaksPii(sentence, sess.verify.verifiedPhone)) { blocked = true; break; }
+          yield say(sentence);
+        }
+      } catch (e) {
+        if (signal.aborted) return; // 끼어들기: 조용히 종료 (다음 턴이 이어받음)
+        blocked = true; // LLM 장애: 고객이 답을 못 받는 일이 없도록 사장님 연결 멘트로 대체
+      } finally {
+        ac.abort();
+        signal.removeEventListener('abort', onAbort);
+      }
+      if (blocked) {
+        sess.needsOwner = true;
+        yield setState('HANDOFF');
+        yield say(handoffLine());
+      }
     }
   }
 
@@ -218,7 +225,7 @@ export async function* runTurn(sess: CallSession, text: string, deps: TurnDeps, 
 }
 
 /** 통화 시작 (브라우저 통화 · Vapi 공용): 문의 생성 + 인사말(AI 고지 포함) 기록. 전화 응대가 꺼진 매장은 409 */
-export async function startCallSession(db: Db, tenantId: string, cfg: TenantConfig, id: string): Promise<{ sess: CallSession; greeting: string }> {
+export async function startCallSession(db: Db, tenantId: string, cfg: TenantConfig, id: string, alerts?: AlertCenter): Promise<{ sess: CallSession; greeting: string }> {
   const { voice, response } = cfg.settings;
   await createContextStore(db).load(tenantId).catch(() => {}); // 매장 문서 최신본 (실패하면 캐시 · 기본값)
   if (!voice.enabled || !response.ai_enabled || !response.channels.call) throw new ApiError(409, 'voice_disabled', '이 매장은 AI 전화 응대가 꺼져 있습니다.');
@@ -226,6 +233,7 @@ export async function startCallSession(db: Db, tenantId: string, cfg: TenantConf
   const base = renderTemplate(cfg, 'greeting');
   const greeting = [base, response.ai_disclosure.enabled && !base.includes('AI') ? response.ai_disclosure.text : ''].filter(Boolean).join(' ');
   await db.withTenant(tenantId, (tx) => tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: greeting }));
+  alerts?.emitEvent?.(tenantId, 'inquiry', { id: inq!.id });
   const sess: CallSession = {
     id, channel: 'call', tenantId, inquiryId: inq!.id, state: 'GREET', verify: newVerifyState(), abuseStreak: 0,
     awaitingVerify: false, pendingQuestion: null, heat: 0, needsOwner: false, riskFlags: new Set(),
@@ -239,6 +247,7 @@ export async function finalizeInquiry(sess: CallSession, deps: TurnDeps) {
   const status = sess.needsOwner || sess.heat >= deps.cfg.settings.response.heat_threshold ? 'pending' : 'auto_done';
   await deps.db.withTenant(sess.tenantId, (tx) => tx.update(s.inquiries).set({ status, updatedAt: new Date() }).where(eq(s.inquiries.id, sess.inquiryId)));
   const card = await buildCallCard(sess, deps);
+  deps.alerts?.emitEvent?.(sess.tenantId, 'inquiry', { id: sess.inquiryId });
   const n = deps.cfg.settings.notifications;
   if (deps.alerts && (status === 'pending' ? n.events.pending_card : n.events.call_ended)) {
     await deps.alerts.emit(deps.cfg, {

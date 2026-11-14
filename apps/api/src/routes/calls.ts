@@ -33,7 +33,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
       const cfg = getTenantConfig(tenantId);
       const { voice } = cfg.settings;
       const id = randomUUID();
-      const { sess, greeting } = await startCallSession(deps.db, tenantId, cfg, id);
+      const { sess, greeting } = await startCallSession(deps.db, tenantId, cfg, id, deps.alerts);
       void deps.llm.warmup(); // 첫 턴 전에 연결 수립 (측정: 첫 턴 1.9s → 연결 재사용 시 0.8s 안팎)
       if (voice.tts.engine !== 'browser' && deps.tts.configured !== false) { // vapi 매장도 Vapi 키가 없을 때는 이 경로(서버 음성)로 대신 통화
         // 고정 문구는 통화 시작에 미리 합성해 캐시에 넣어 둠 → 해당 턴은 기다림 없이 재생

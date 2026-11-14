@@ -8,6 +8,7 @@ import { SnsPage } from './pages/SnsPage';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { DemoPage } from './pages/DemoPage';
+import { TestPage } from './pages/TestPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SettingsChannelsPage } from './pages/SettingsChannelsPage';
 import { SettingsThresholdPage } from './pages/SettingsThresholdPage';
@@ -55,6 +56,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/customers" element={<RequireAuth><CustomersPage /></RequireAuth>} />
       <Route path="/customers/:id" element={<RequireAuth><CustomersPage /></RequireAuth>} />
       <Route path="/demo" element={<RequireAuth><DemoPage /></RequireAuth>} />
+      <Route path="/test" element={<RequireAuth><TestPage /></RequireAuth>} />
 
       <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       <Route path="/settings/channels" element={<RequireAuth><SettingsChannelsPage /></RequireAuth>} />

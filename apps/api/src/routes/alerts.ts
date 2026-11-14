@@ -1,6 +1,7 @@
 // 사장님 화면 알림 피드 + 푸시(FCM) 기기 등록. 프론트는 GET /alerts?after= 를 몇 초마다 폴링하고 각 알림의 display · sound대로 띄웁니다.
 // 화면을 안 보고 있을 때는 FCM 푸시 (매장 설정 notifications.push)
 import { tenantOf } from '../auth.js';
+import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -22,6 +23,37 @@ export function alertRoutes(deps: { db: Db; alerts: AlertCenter; env?: NodeJS.Pr
     app.get('/alerts', {
       schema: { tags: ['alerts'], querystring: C.AlertListQuery, response: { 200: z.object({ items: z.array(C.Alert) }) }, description: '최신순. 폴링할 때 마지막으로 받은 created_at을 after로' },
     }, async (req) => ({ items: await deps.alerts.list(tenantOf(req), req.query.after, req.query.limit) }));
+
+    app.get('/events/stream', {
+      schema: { tags: ['alerts'], description: '실시간 알림 · 문의 갱신 스트림 (SSE)' },
+    }, async (req, reply) => {
+      const tenantId = tenantOf(req);
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        ...(reply.getHeaders() as OutgoingHttpHeaders),
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no',
+      });
+      reply.raw.write('event: connected\ndata: {}\n\n');
+
+      const unsubscribe = deps.alerts.subscribe(tenantId, (ev) => {
+        if (reply.raw.writableEnded) return;
+        reply.raw.write(`event: ${ev.type}\ndata: ${JSON.stringify(ev.data ?? {})}\n\n`);
+      });
+      const ping = setInterval(() => {
+        if (!reply.raw.writableEnded) reply.raw.write(': ping\n\n');
+      }, 25_000);
+      ping.unref();
+
+      const cleanup = () => {
+        clearInterval(ping);
+        unsubscribe();
+      };
+      req.raw.on('close', cleanup);
+      reply.raw.on('close', cleanup);
+    });
 
     app.post('/alerts/:id/ack', {
       schema: { tags: ['alerts'], params: z.object({ id: z.string().uuid() }), response: { 200: C.Alert }, description: '확인 처리 (모달 · 배너 닫기)' },

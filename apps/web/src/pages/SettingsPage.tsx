@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Layout } from '../components/Layout';
+import { PushNotificationCard } from '../components/PushNotificationCard';
 import { useApp } from '../context/AppContext';
 import { CONFIG, bizTypeOf } from '../lib/config';
 import type { BizTypeId } from '../lib/types';
@@ -212,6 +213,9 @@ export const SettingsPage: React.FC = () => {
               </label>
             );
           })}
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <PushNotificationCard />
         </div>
       </section>
 

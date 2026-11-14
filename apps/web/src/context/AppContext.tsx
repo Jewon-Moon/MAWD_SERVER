@@ -272,7 +272,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [applyMe, pullServer]);
 
-  // 15s background polling for inquiries + alerts
+  // Real-time SSE updates (with auto-reconnect)
+  useEffect(() => {
+    if (!isAuthed || !Api.token()) return;
+
+    let cancelled = false;
+    let ac: AbortController | null = null;
+    let reconnectTimer: number | null = null;
+
+    const scheduleReconnect = (delayMs = 3000) => {
+      if (cancelled) return;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      reconnectTimer = window.setTimeout(() => {
+        void connect();
+      }, delayMs);
+    };
+
+    const handleSseFrame = (frame: string) => {
+      let eventName = 'message';
+      const dataLines: string[] = [];
+
+      for (const line of frame.split('\n')) {
+        if (!line || line.startsWith(':')) continue;
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          dataLines.push(line.slice(5).trimStart());
+        }
+      }
+
+      if (dataLines.length === 0 && eventName === 'message') return;
+
+      let payload: Record<string, unknown> | null = null;
+      if (dataLines.length > 0) {
+        const rawData = dataLines.join('\n');
+        try {
+          const parsed: unknown = JSON.parse(rawData);
+          if (parsed && typeof parsed === 'object') {
+            payload = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // ignore non-JSON SSE payloads
+        }
+      }
+
+      const kind = eventName !== 'message' ? eventName : String(payload?.type || '');
+      if (kind === 'alert') {
+        void pullServer();
+        if (typeof payload?.created_at === 'string') {
+          lastAlertAt.current = payload.created_at;
+        }
+        const msg = payload?.title || payload?.message;
+        if (typeof msg === 'string' && msg.trim()) {
+          showToast(msg);
+        }
+      } else if (kind === 'inquiry') {
+        void pullServer();
+      }
+    };
+
+    const connect = async () => {
+      const tok = Api.token();
+      if (cancelled || !tok) return;
+
+      ac = new AbortController();
+      try {
+        const res = await fetch(`${Api.base()}/v1/events/stream`, {
+          headers: {
+            Authorization: `Bearer ${tok}`,
+            Accept: 'text/event-stream',
+          },
+          credentials: 'include',
+          signal: ac.signal,
+        });
+
+        if (!res.ok || !res.body) {
+          scheduleReconnect(3000);
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+
+          let idx = buffer.indexOf('\n\n');
+          while (idx !== -1) {
+            const frame = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            handleSseFrame(frame);
+            idx = buffer.indexOf('\n\n');
+          }
+        }
+
+        if (!cancelled) {
+          scheduleReconnect(3000);
+        }
+      } catch (err: unknown) {
+        if (!cancelled && !(err instanceof DOMException && err.name === 'AbortError')) {
+          scheduleReconnect(3000);
+        }
+      }
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      ac?.abort();
+    };
+  }, [isAuthed, pullServer, showToast]);
+
+  // 15s background polling for inquiries + alerts (fallback)
   useEffect(() => {
     if (!isAuthed || !Api.token()) return;
     const timer = window.setInterval(async () => {

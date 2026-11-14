@@ -52,6 +52,23 @@ const ANGER = ['화나', '짜증', '열받', '어이없', '장난하', '당장',
 // 특정 주문을 가리키는 표현만 (본인 확인 필요). "배송비 얼마예요", "주문은 어떻게 해요" 같은 일반 질문은 매장 정보 · FAQ로 바로 답함
 const ORDER_INTENT = ['주문한', '주문했', '내 주문', '제 주문', '주문 내역', '주문내역', '송장', '운송장', '도착', '언제 와', '언제와', '언제 오', '언제쯤 와', '출고', '배송 조회', '배송조회', '배송 현황', '어디쯤'];
 const CLOSING = ['끊을게', '끊겠', '됐어요', '그만할게', '수고하세요', '이만', '알겠습니다 감사'];
+const ORDER_MOD_PATTERNS = [
+  /방문\s*수령.*(변경|바꿔|바꿀)/,
+  /배송\s*(방법|방식|지).*(변경|바꿔|바꿀)/,
+  /수령\s*방법.*(변경|바꿔|바꿀)/,
+  /주소.*(변경|바꿔|바꿀)/,
+  /주문.*변경/,
+  /변경\s*가능/,
+  /바꿔\s*(주|줄|드릴)/,
+  /취소\s*(해|하고|요청|가능)/,
+  /(교환|환불|반품)\s*(해|하고|요청)/,
+];
+
+/** 주문 변경 · 배송 방법/배송지 변경 · 취소/교환/환불 등 사장님 처리가 필요한 요청인지 판별 */
+export function hasOrderModificationIntent(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ');
+  return ORDER_MOD_PATTERNS.some((re) => re.test(t));
+}
 
 export type Prefilter = { abusive: boolean; heatHint: number; orderIntent: boolean; closing: boolean; rules: Rule[] };
 
@@ -99,6 +116,7 @@ export function decideTurn(s: CallSession, text: string, cfg: TenantConfig, pf: 
   const da = cfg.settings['data-access'];
 
   const ownerNeededBefore = s.needsOwner; // 직전 턴까지의 판단만 이번 턴 HANDOFF 근거로 씀 (approve 규칙은 진정 응대를 먼저)
+  if (hasOrderModificationIntent(text)) s.needsOwner = true;
   s.lastTurnAbuse = { before: s.abuseStreak, keyword: pf.abusive }; // Bivia가 나중에 욕설로 판단하면 이 턴을 연속 횟수에 다시 넣음
   s.abuseStreak = pf.abusive ? s.abuseStreak + 1 : 0;
   if (s.abuseStreak > voice.abuse_turn_limit) return { kind: 'template', state: 'CLOSE', template: 'abuse_end', endCall: true };

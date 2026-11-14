@@ -42,6 +42,8 @@ export type AlertInput = {
   heat: number; riskFlags: string[]; needsOwner: boolean; title: string; message: string;
 };
 export type AlertCenter = ReturnType<typeof createAlertCenter>;
+export type AlertEvent = { type: string; data?: unknown };
+type EventListener = (ev: AlertEvent) => void;
 type Log = { error: (o: object, m: string) => void };
 
 const toOut = (r: typeof s.alerts.$inferSelect): AlertOut => ({
@@ -58,6 +60,26 @@ export function shouldPush(cfg: TenantConfig, priority: Priority, now: Date) {
 export function createAlertCenter(deps: { db: Db; push?: PushSender; log?: Log; publicUrl?: string; now?: () => Date }) {
   const now = deps.now ?? (() => new Date());
   const PRI = { urgent: '긴급', high: '높음', normal: '보통' } as const;
+  const subscribers = new Map<string, Set<EventListener>>();
+
+  function emitEvent(tenantId: string, type: string, data?: unknown): void {
+    const set = subscribers.get(tenantId);
+    if (!set) return;
+    const ev: AlertEvent = data === undefined ? { type } : { type, data };
+    for (const fn of set) {
+      try { fn(ev); } catch (err) { deps.log?.error({ err }, 'alert subscriber failed'); }
+    }
+  }
+
+  function subscribe(tenantId: string, fn: EventListener): () => void {
+    let set = subscribers.get(tenantId);
+    if (!set) { set = new Set(); subscribers.set(tenantId, set); }
+    set.add(fn);
+    return () => {
+      set.delete(fn);
+      if (set.size === 0) subscribers.delete(tenantId);
+    };
+  }
 
   async function push(cfg: TenantConfig, a: AlertOut, tenantId: string) {
     if (!deps.push || !shouldPush(cfg, a.priority, now())) return;
@@ -90,9 +112,12 @@ export function createAlertCenter(deps: { db: Db; push?: PushSender; log?: Log; 
         heat: Math.max(0, Math.min(100, Math.round(a.heat))), title: a.title, message: a.message, ...styleFor(cfg, priority, t), createdAt: t,
       }).returning());
       const out = toOut(row!);
+      emitEvent(a.tenantId, 'alert', out);
       void push(cfg, out, a.tenantId).catch((err) => deps.log?.error({ err }, 'push failed'));
       return out;
     },
+    subscribe,
+    emitEvent,
     /** 최신순. after를 주면 그 시각 이후만 (폴링용) */
     async list(tenantId: string, after?: string, limit = 50) {
       const rows = await deps.db.withTenant(tenantId, (tx) => tx.select().from(s.alerts)

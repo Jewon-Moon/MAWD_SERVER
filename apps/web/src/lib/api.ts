@@ -163,4 +163,31 @@ export const Api = {
   /* Alerts */
   alerts: (since?: string) => Api.req(`/alerts${since ? '?since=' + encodeURIComponent(since) : ''}`),
   ackAlert: (id: string) => Api.req(`/alerts/${encodeURIComponent(id)}/ack`, { method: 'POST', body: '{}' }),
+
+  /* Push Notifications */
+  pushConfig: () =>
+    Api.req<{
+      enabled?: boolean;
+      config?: Record<string, string>;
+      vapidKey?: string;
+      vapid_key?: string;
+      [key: string]: unknown;
+    }>('/push/config'),
+  pushTokens: () =>
+    Api.req<
+      Array<{
+        id: string;
+        platform: string;
+        label?: string | null;
+        token_tail?: string;
+        last_seen_at?: string;
+      }>
+    >('/push/tokens'),
+  registerPushToken: (token: string, platform = 'web', label?: string) =>
+    Api.req('/push/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform, label }),
+    }),
+  deletePushToken: (id: string) =>
+    Api.req(`/push/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
