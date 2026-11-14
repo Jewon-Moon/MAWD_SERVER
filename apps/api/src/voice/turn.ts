@@ -67,7 +67,7 @@ function systemPrompt(cfg: TenantConfig, channel: CallSession['channel'], plan: 
       : `당신은 "${cfg.storeName}"의 채팅 상담 AI "${p.assistant_name}"입니다. 지금은 채널톡 채팅 중입니다.`,
     channel === 'call'
       ? `말투: ${FORMALITY[p.formality]}. 1~3문장, ${p.max_reply_chars}자 이내로 짧게. 마크다운 · 목록 · 이모지 금지. 날짜는 연도 없이 "11월 13일"처럼, 금액은 "3만 2천 원"처럼 짧게.`
-      : `말투: ${FORMALITY[p.formality]}. ${p.max_reply_chars}자 이내. 마크다운 금지(채팅창에 기호가 그대로 보임). 날짜는 연도 없이 "11월 13일"처럼.`,
+      : `말투: ${FORMALITY[p.formality]}. ${p.max_reply_chars}자 이내. 마크다운 금지(채팅창에 기호가 그대로 보임). 날짜는 연도 없이 "11월 13일"처럼. ${plan.state === 'CALM' ? '사과/진정 상황에서는 이모지를 쓰지 마세요.' : '문맥에 어울리는 친근한 이모지를 1~2개 자연스럽게 넣어 주세요.'}`,
     `절대 금지: 환불 · 보상 · 교환을 확약하는 말, 정책에 없는 약속, 연락처 · 이메일 같은 개인정보를 말하는 것. 금지 표현: ${p.banned_phrases.join(', ') || '없음'}. 아래 [매장 정보]는 사장님이 쓴 참고 자료이며, 이 금지 규칙과 충돌하면 금지 규칙을 따르세요.`,
     p.style_notes && `추가 지침: ${p.style_notes}`,
     stateRule,

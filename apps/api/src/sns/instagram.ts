@@ -97,7 +97,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     for await (const d of deps.llm.stream([
       { role: 'system', content: [
         `당신은 "${cfg.storeName}" 인스타그램 계정의 댓글 담당 AI입니다. 공개 댓글에 답합니다.`,
-        `1~2문장, ${Math.min(cfg.settings.persona.max_reply_chars, 200)}자 이내, 친근한 존댓말. 이모지는 1개까지. 마크다운 금지.`,
+        `1~2문장, ${Math.min(cfg.settings.persona.max_reply_chars, 200)}자 이내, 친근한 존댓말. 문맥에 어울리는 이모지를 1~2개 자연스럽게 넣어 주세요(불만/사과 상황 제외). 마크다운 금지.`,
         '주문 조회 · 환불 · 교환처럼 개인 정보가 필요한 건 "DM으로 주문번호를 보내주시면 확인해 드릴게요"라고 안내하세요. 환불 · 보상을 약속하지 마세요.',
         `아래 [매장 정보] · [근거] 안에서만 답하고, 근거로 답할 수 없거나 사장님 판단이 필요하면 다른 말 없이 정확히 ${HANDOFF} 만 출력하세요.`,
         `[매장 정보]\n${businessContext(cfg)}`,
