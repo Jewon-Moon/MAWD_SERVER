@@ -83,14 +83,18 @@ function mapServerInquiry(raw: any): InquiryItem {
   const score = typeof heatObj.score === 'number' ? heatObj.score : typeof raw.score === 'number' ? raw.score : 0;
   const status = raw.status || 'pending';
   const route = raw.route || '';
-  const isHeld = status === 'pending' || status === 'manual' || route === 'B' || route === 'C';
 
   let handled: InquiryItem['handled'] = false;
-  if (status === 'resolved' || status === 'closed') {
-    handled = route === 'A' ? 'auto' : 'sent';
+  if (status === 'auto_done' || status === 'resolved' || status === 'closed') {
+    handled = status === 'auto_done' || route === 'A' ? 'auto' : 'sent';
+  } else if (status === 'done') {
+    handled = 'sent';
+  } else if (status === 'manual') {
+    handled = 'manual';
   } else if (status === 'ignored') {
     handled = 'ignored';
   }
+  const isHeld = status === 'pending' || status === 'manual' || (!handled && (route === 'B' || route === 'C'));
 
   const tsRaw = raw.created_at || raw.updated_at || raw.ts;
   const ts = typeof tsRaw === 'number' ? tsRaw : tsRaw ? new Date(tsRaw).getTime() : Date.now();
@@ -123,6 +127,7 @@ function mapServerInquiry(raw: any): InquiryItem {
     reportedAt: null,
     server: true,
     serverStatus: status,
+    snsAction: raw.sns_action ?? null,
     category: raw.category || '',
     heatLabel: heatObj.label || (score >= 70 ? '매우 높음' : score >= 40 ? '높음' : ''),
     card: raw.card || null,

@@ -123,19 +123,27 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     const heat = j.heat ?? 0;
     const shouldHide = (ig.auto_hide === 'abusive' && j.abusive) || (ig.auto_hide === 'abusive_or_heated' && (j.abusive || heat >= ig.hide_heat_gte));
 
-    let action: CommentResult['action'] = 'none';
+    let action: CommentResult['action'] = c.hidden ? 'hidden' : 'none';
     let reply: string | null = null;
     try {
       const { token, client } = await credOf(tenantId);
-      if (shouldHide) { await client.hide(c.commentId, token); action = 'hidden'; }
-      else if (ig.auto_reply && !j.needsOwner && !j.abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
-        reply = await draftReply(tenantId, cfg, c);
-        if (reply) { await client.reply(c.commentId, reply, token); action = 'replied'; }
+      if (c.hidden) {
+        action = 'hidden';
+      } else if (shouldHide) {
+        await client.hide(c.commentId, token);
+        action = 'hidden';
+      } else if (ig.auto_reply && !j.needsOwner && !j.abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
+        const draft = await draftReply(tenantId, cfg, c);
+        if (draft) {
+          await client.reply(c.commentId, draft, token);
+          reply = draft;
+          action = 'replied';
+        }
       }
     } catch (err) { deps.log?.error({ err, comment: c.commentId }, 'instagram action failed'); }
 
-    // 문의 기록 (댓글 하나 = 문의 하나). 숨김 · 판단 필요는 사장님 승인 대기
-    const status = action === 'hidden' || j.needsOwner ? 'pending' : 'auto_done';
+    // 문의 기록 (댓글 하나 = 문의 하나). 실제 자동 답글을 달았을 때만 auto_done, 숨김 · 판단 필요 · 미답변은 사장님 확인 대기(pending)
+    const status = action === 'replied' && !j.needsOwner ? 'auto_done' : 'pending';
     const inquiryId = await deps.db.withTenant(tenantId, async (tx) => {
       const [inq] = await tx.insert(s.inquiries).values({ tenantId, channel: 'sns', status, externalChatId: `ig:${c.commentId}`, customerName: c.username })
         .onConflictDoUpdate({ target: [s.inquiries.tenantId, s.inquiries.externalChatId], set: { status, updatedAt: new Date() } })
@@ -196,6 +204,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
           fromId: cm.from?.id ?? null,
           username: cm.from?.username ?? cm.username ?? null,
           text,
+          hidden: cm.hidden,
         });
         if (res.action === 'skipped') skipped += 1;
         else imported += 1;

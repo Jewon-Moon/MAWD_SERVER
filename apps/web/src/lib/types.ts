@@ -220,6 +220,7 @@ export interface InquiryItem {
   reportedAt: number | null;
   server?: boolean;
   serverStatus?: string;
+  snsAction?: 'hidden' | 'replied' | 'none' | null;
   category?: string;
   heatLabel?: string;
   card?: InquiryCard | null;

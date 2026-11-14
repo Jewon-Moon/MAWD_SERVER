@@ -6,7 +6,7 @@ import { Api } from '../lib/api';
 import { buildDraft, formatAgo } from '../lib/judge';
 import type { InquiryItem, InstagramConnection } from '../lib/types';
 
-type SnsFilter = 'all' | 'held' | 'auto';
+type SnsFilter = 'all' | 'held' | 'hidden' | 'auto';
 
 function scoreTone(score: number, threshold: number): 'red' | 'gold' | 'green' {
   if (score >= threshold) return 'red';
@@ -14,12 +14,13 @@ function scoreTone(score: number, threshold: number): 'red' | 'gold' | 'green' {
   return 'green';
 }
 
-function handledBadge(it: InquiryItem): { label: string; tone: 'green' | 'blue' | 'gray' } | null {
+function handledBadge(it: InquiryItem): { label: string; tone: 'green' | 'blue' | 'gray' | 'red' } | null {
+  if (it.snsAction === 'hidden') return { label: '숨김 처리', tone: 'red' };
   if (it.handled === 'auto') return { label: '자동 응대', tone: 'green' };
   if (it.handled === 'sent') return { label: '답변 완료', tone: 'blue' };
   if (it.handled === 'manual') return { label: '직접 응대', tone: 'blue' };
   if (it.handled === 'ignored') return { label: '종료됨', tone: 'gray' };
-  return null;
+  return { label: '보류', tone: 'gray' };
 }
 
 export const SnsPage: React.FC = () => {
@@ -65,17 +66,21 @@ export const SnsPage: React.FC = () => {
   );
 
   const counts = useMemo(() => {
-    const held = snsItems.filter((it) => !it.handled || it.verdict === 'held').length;
-    const auto = snsItems.filter((it) => it.handled === 'auto').length;
-    return { all: snsItems.length, held, auto };
+    const hidden = snsItems.filter((it) => it.snsAction === 'hidden').length;
+    const held = snsItems.filter((it) => !it.handled && it.snsAction !== 'hidden').length;
+    const auto = snsItems.filter((it) => it.handled === 'auto' && it.snsAction !== 'hidden').length;
+    return { all: snsItems.length, held, hidden, auto };
   }, [snsItems]);
 
   const filteredItems = useMemo(() => {
+    if (filter === 'hidden') {
+      return snsItems.filter((it) => it.snsAction === 'hidden');
+    }
     if (filter === 'held') {
-      return snsItems.filter((it) => !it.handled || it.verdict === 'held');
+      return snsItems.filter((it) => !it.handled && it.snsAction !== 'hidden');
     }
     if (filter === 'auto') {
-      return snsItems.filter((it) => it.handled === 'auto');
+      return snsItems.filter((it) => it.handled === 'auto' && it.snsAction !== 'hidden');
     }
     return snsItems;
   }, [snsItems, filter]);
@@ -325,7 +330,16 @@ export const SnsPage: React.FC = () => {
               className={`seg-btn ${filter === 'held' ? 'is-active' : ''}`}
               onClick={() => setFilter('held')}
             >
-              보류/숨김 ({counts.held})
+              보류 ({counts.held})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filter === 'hidden'}
+              className={`seg-btn ${filter === 'hidden' ? 'is-active' : ''}`}
+              onClick={() => setFilter('hidden')}
+            >
+              숨김 ({counts.hidden})
             </button>
             <button
               type="button"

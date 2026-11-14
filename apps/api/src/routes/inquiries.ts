@@ -34,11 +34,12 @@ export function inquiryRoutes(deps: { db: Db }): FastifyPluginAsyncZod {
         const heat = a.get(r.id)?.heat ?? null;
         const card = c.get(r.id)?.summary as z.infer<typeof C.Card> | undefined;
         const preview = (text.get(r.id) ?? '').slice(0, 500);
-        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string };
+        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none' };
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
           title: card?.title || preview.slice(0, 40) || '(내용 없음)', customer_name: r.customerName,
           category: raw.category || a.get(r.id)?.category || '기타', heat_label: labelOf(tenantId, heat), heat, preview,
+          sns_action: raw.action ?? null,
           created_at: r.createdAt.toISOString(), updated_at: r.updatedAt.toISOString(),
           _card: card ?? null, _analysis: a.get(r.id) ?? null, _muted: r.aiMuted,
         };
