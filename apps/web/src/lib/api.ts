@@ -61,8 +61,8 @@ export const Api = {
   },
 
   /* Auth */
-  signup: (email: string, password: string, name: string) =>
-    Api.req('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
+  signup: (email: string, password: string, store_name: string) =>
+    Api.req('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, store_name }) }),
   login: (email: string, password: string) =>
     Api.req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   logout: () => Api.req('/auth/logout', { method: 'POST' }).catch(() => {}),

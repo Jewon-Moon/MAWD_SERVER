@@ -13,6 +13,7 @@ interface AuthResponse {
 
 interface MeResponse {
   setup?: {
+    done?: boolean;
     onboarded?: boolean;
   };
 }
@@ -67,7 +68,8 @@ export const LoginPage: React.FC = () => {
       await pullServer().catch(() => {});
 
       showToast(mode === 'login' ? '로그인되었습니다' : '회원가입이 완료되었습니다');
-      navigate(me?.setup?.onboarded ? '/' : '/onboarding', { replace: true });
+      const isDone = Boolean(me?.setup?.done ?? me?.setup?.onboarded);
+      navigate(isDone ? '/' : '/onboarding', { replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '로그인에 실패했습니다.';
       setError(msg);

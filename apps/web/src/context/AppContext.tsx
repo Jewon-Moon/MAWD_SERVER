@@ -181,16 +181,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const applyMe = useCallback(
     (me: any) => {
       if (!me) return;
-      const store = me.store || {};
-      const owner = me.owner || {};
+      const tenant = me.tenant || me.store || {};
+      const user = me.user || me.owner || {};
       const setup = me.setup || {};
+      const isDone =
+        typeof setup.done === 'boolean'
+          ? setup.done
+          : typeof setup.onboarded === 'boolean'
+            ? setup.onboarded
+            : undefined;
       updateData((prev) => {
         const nextSettings: LocalSettings = {
           ...prev.settings,
-          storeName: store.name || prev.settings.storeName,
-          ownerName: owner.name || prev.settings.ownerName,
-          email: owner.email || prev.settings.email,
-          onboarded: typeof setup.onboarded === 'boolean' ? setup.onboarded : prev.settings.onboarded,
+          storeName: tenant.name || prev.settings.storeName,
+          ownerName: user.name || prev.settings.ownerName,
+          email: user.email || prev.settings.email,
+          onboarded: typeof isDone === 'boolean' ? isDone : prev.settings.onboarded,
           bizType: (setup.template && TEMPLATE_TO_BIZ[setup.template]) || prev.settings.bizType,
         };
         return {
@@ -256,7 +262,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsAuthed(true);
       } catch (e: any) {
         if (!alive) return;
-        if (e?.status === 401) {
+        if (e?.status === 401 || e?.status === 403) {
           Api.setToken(null);
           setIsAuthed(false);
         } else {
