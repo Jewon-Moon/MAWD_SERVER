@@ -8,12 +8,13 @@ import type { createDb } from '../db/client.js';
 import * as s from '../db/schema.js';
 import { notFound } from '../errors.js';
 import type { ChatSender } from '../integrations/channeltalk.js';
+import type { InstagramService } from '../sns/instagram.js';
 import { getTenantConfig } from '../tenantConfig.js';
 
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
 
-export function inquiryRoutes(deps: { db: Db; sender?: ChatSender }): FastifyPluginAsyncZod {
+export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: InstagramService }): FastifyPluginAsyncZod {
   const labelOf = (tenantId: string, heat: number | null) => {
     const l = getTenantConfig(tenantId).settings.response.heat_labels;
     return heat == null ? '보통' as const : heat >= l.very_high ? '매우 높음' as const : heat >= l.high ? '높음' as const : '보통' as const;
@@ -25,21 +26,31 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender }): FastifyPlu
     const ids = rows.map((r) => r.id);
     return deps.db.withTenant(tenantId, async (tx) => {
       const an = await tx.select().from(s.analyses).where(inArray(s.analyses.inquiryId, ids)).orderBy(s.analyses.createdAt);
-      const msgs = await tx.select().from(s.messages).where(and(inArray(s.messages.inquiryId, ids), eq(s.messages.sender, 'customer'))).orderBy(s.messages.createdAt);
+      const msgs = await tx.select().from(s.messages).where(inArray(s.messages.inquiryId, ids)).orderBy(s.messages.createdAt);
       const cards = await tx.select().from(s.cards).where(inArray(s.cards.inquiryId, ids)).orderBy(s.cards.createdAt);
       const last = <T extends { inquiryId: string }>(xs: T[]) => new Map(xs.map((x) => [x.inquiryId, x]));
       const a = last(an), c = last(cards);
       const text = new Map<string, string>();
-      for (const m of msgs) text.set(m.inquiryId, [text.get(m.inquiryId), m.text].filter(Boolean).join(' '));
+      const lastReply = new Map<string, { text: string; at: string }>();
+      for (const m of msgs) {
+        if (m.sender === 'customer') {
+          text.set(m.inquiryId, [text.get(m.inquiryId), m.text].filter(Boolean).join(' '));
+        } else if (m.sender === 'ai' || m.sender === 'owner') {
+          lastReply.set(m.inquiryId, { text: m.text, at: m.createdAt.toISOString() });
+        }
+      }
       return rows.map((r) => {
         const heat = a.get(r.id)?.heat ?? null;
         const card = c.get(r.id)?.summary as z.infer<typeof C.Card> | undefined;
         const preview = (text.get(r.id) ?? '').slice(0, 500);
+        const rep = lastReply.get(r.id);
         const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none' };
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
           title: card?.title || preview.slice(0, 40) || '(내용 없음)', customer_name: r.customerName,
           category: raw.category || a.get(r.id)?.category || '기타', heat_label: labelOf(tenantId, heat), heat, preview,
+          reply: rep?.text ?? null,
+          reply_at: rep?.at ?? null,
           sns_action: raw.action ?? null,
           created_at: r.createdAt.toISOString(), updated_at: r.updatedAt.toISOString(),
           _card: card ?? null, _analysis: a.get(r.id) ?? null, _muted: r.aiMuted,
@@ -101,6 +112,9 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender }): FastifyPlu
       const d = await detail(t, id);
       const reply = b.type === 'edit_send' ? b.text : b.type === 'approve' ? d.card?.recommendations[b.recommendation_index]?.draft : undefined;
       const status = b.type === 'hold' ? 'pending' as const : b.type === 'manual' ? 'manual' as const : 'done' as const;
+      if (reply && d.channel === 'sns' && deps.instagram) {
+        await deps.instagram.replyToInquiry(t, id, reply);
+      }
       await deps.db.withTenant(t, async (tx) => {
         if (reply) await tx.insert(s.messages).values({ tenantId: t, inquiryId: id, sender: 'owner', text: reply });
         await tx.update(s.inquiries).set({ status, aiMuted: b.type === 'manual' ? true : d.ai_muted, updatedAt: new Date() }).where(eq(s.inquiries.id, id));

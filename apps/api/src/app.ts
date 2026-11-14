@@ -88,7 +88,6 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   const context = createContextStore(db);
   await app.register(accountRoutes({ db, auth, context, secrets }), { prefix: '/v1' });
   await app.register(mockRoutes, { prefix: '/v1' });
-  await app.register(inquiryRoutes({ db, sender }), { prefix: '/v1' });
   await app.register(settingsRoutes({ db }), { prefix: '/v1' });
   const llm = opts.llm ?? createLlm();
   const bivia = opts.bivia ?? createBivia();
@@ -109,6 +108,7 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   const igSyncLoop = instagram.startSyncLoop(igSyncMs);
   app.addHook('onClose', async () => { igSyncLoop.stop(); });
   await app.register(instagramRoutes({ db, instagram, fetchFn: opts.fetchFn }), { prefix: '/v1' });
+  await app.register(inquiryRoutes({ db, sender, instagram }), { prefix: '/v1' });
   await app.register(callRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
   const chat = createChatService({ db, llm, sender, log: app.log, alerts, bivia, rag, tracker, commerce });
   await app.register(channelTalkRoutes({ db, chat, secrets, fetchFn: opts.fetchFn }), { prefix: '/v1' });

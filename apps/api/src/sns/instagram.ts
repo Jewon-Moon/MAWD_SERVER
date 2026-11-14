@@ -143,12 +143,14 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     } catch (err) { deps.log?.error({ err, comment: c.commentId }, 'instagram action failed'); }
 
     // 문의 기록 (댓글 하나 = 문의 하나). 실제 자동 답글을 달았을 때만 auto_done, 숨김 · 판단 필요 · 미답변은 사장님 확인 대기(pending)
+    const parsedTs = c.timestamp ? new Date(c.timestamp) : null;
+    const commentedAt = parsedTs && !Number.isNaN(parsedTs.getTime()) ? parsedTs : new Date();
     const status = action === 'replied' && !j.needsOwner ? 'auto_done' : 'pending';
     const inquiryId = await deps.db.withTenant(tenantId, async (tx) => {
-      const [inq] = await tx.insert(s.inquiries).values({ tenantId, channel: 'sns', status, externalChatId: `ig:${c.commentId}`, customerName: c.username })
+      const [inq] = await tx.insert(s.inquiries).values({ tenantId, channel: 'sns', status, externalChatId: `ig:${c.commentId}`, customerName: c.username, createdAt: commentedAt, updatedAt: commentedAt })
         .onConflictDoUpdate({ target: [s.inquiries.tenantId, s.inquiries.externalChatId], set: { status, updatedAt: new Date() } })
         .returning({ id: s.inquiries.id });
-      await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'customer', text: c.text, externalMessageId: c.commentId });
+      await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'customer', text: c.text, externalMessageId: c.commentId, createdAt: commentedAt });
       if (reply) await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: reply });
       await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner: j.needsOwner, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive: j.abusive, category: j.category, risk_flags: j.riskFlags, judged_by: j.by } });
       if (action !== 'none') await tx.insert(s.actions).values({ tenantId, inquiryId: inq!.id, actor: 'ai', type: `instagram_${action}`, payload: { comment_id: c.commentId } });
@@ -205,6 +207,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
           username: cm.from?.username ?? cm.username ?? null,
           text,
           hidden: cm.hidden,
+          timestamp: cm.timestamp ?? null,
         });
         if (res.action === 'skipped') skipped += 1;
         else imported += 1;
@@ -239,6 +242,23 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     return { stop: () => clearInterval(timer) };
   }
 
-  return { connect, connectUnified, status, disconnect, handleComment, syncComments, startSyncLoop };
+  async function replyToInquiry(tenantId: string, inquiryId: string, text: string): Promise<void> {
+    const [inq] = await deps.db.withTenant(
+      tenantId,
+      (tx) => tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.id, inquiryId)),
+      { readOnly: true },
+    );
+    const commentId = inq?.ext?.startsWith('ig:') ? inq.ext.slice(3) : null;
+    if (!commentId) throw new ApiError(400, 'instagram_comment_not_found', '원본 인스타그램 댓글 ID를 찾을 수 없어요.');
+    const { token, client } = await credOf(tenantId);
+    try {
+      await client.reply(commentId, text, token);
+    } catch (err) {
+      deps.log?.error({ err, inquiryId, commentId }, 'instagram owner reply failed');
+      throw new ApiError(502, 'instagram_reply_failed', `인스타그램 답글 전송에 실패했어요: ${err instanceof Error ? err.message : '알 수 없는 오류'}`.slice(0, 260));
+    }
+  }
+
+  return { connect, connectUnified, status, disconnect, handleComment, syncComments, startSyncLoop, replyToInquiry };
 }
 export type InstagramService = ReturnType<typeof createInstagramService>;

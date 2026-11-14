@@ -400,7 +400,9 @@ export const SnsPage: React.FC = () => {
 
                 {it.reply && (
                   <div className="detail-block" style={{ marginTop: 12 }}>
-                    <div className="detail-block-title">보낸 답글</div>
+                    <div className="detail-block-title">
+                      보낸 답글{it.replyAt ? ` · ${formatAgo(it.replyAt)}` : ''}
+                    </div>
                     <div className="fact-val">{it.reply}</div>
                   </div>
                 )}

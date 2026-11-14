@@ -73,6 +73,8 @@ export const InquiryListItem = z.object({
   heat_label: HeatLabel,
   heat: z.number().int().min(0).max(100).nullable().describe('최신 감정 점수 (분석 전이면 null)'),
   preview: z.string().describe('고객이 한 말 (앞 500자)'),
+  reply: z.string().nullable().optional().describe('마지막 AI 또는 사장님 답변'),
+  reply_at: isoTime.nullable().optional().describe('마지막 답변 시각'),
   sns_action: z.enum(['hidden', 'replied', 'none']).nullable().optional().describe('인스타그램 댓글 처리 결과'),
   created_at: isoTime,
   updated_at: isoTime,

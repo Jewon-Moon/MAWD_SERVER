@@ -216,6 +216,7 @@ export interface InquiryItem {
   handled: false | 'auto' | 'sent' | 'manual' | 'ignored';
   handledAt: number | null;
   reply: string;
+  replyAt?: number | null;
   draft: string;
   reportedAt: number | null;
   server?: boolean;

@@ -123,6 +123,7 @@ function mapServerInquiry(raw: any): InquiryItem {
     handled,
     handledAt: handled ? ts : null,
     reply: raw.reply || '',
+    replyAt: raw.reply_at ? new Date(raw.reply_at).getTime() : null,
     draft: raw.draft || '',
     reportedAt: null,
     server: true,

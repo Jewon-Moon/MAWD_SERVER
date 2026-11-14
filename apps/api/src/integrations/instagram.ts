@@ -36,16 +36,17 @@ export function createInstagramClient(fetchFn: typeof fetch = fetch, base = GRAP
         data?: {
           id: string;
           text?: string;
+          timestamp?: string;
           username?: string;
           from?: { id?: string; username?: string };
           parent_id?: string;
           hidden?: boolean;
-          replies?: { data?: { id: string; text?: string; username?: string; from?: { id?: string; username?: string }; parent_id?: string; hidden?: boolean }[] };
+          replies?: { data?: { id: string; text?: string; timestamp?: string; username?: string; from?: { id?: string; username?: string }; parent_id?: string; hidden?: boolean }[] };
         }[];
       }>(
         `${mediaId}/comments`,
         token,
-        { query: { fields: 'id,text,username,from,parent_id,hidden,replies{id,text,username,from,parent_id,hidden}', limit: String(limit) } }
+        { query: { fields: 'id,text,timestamp,username,from,parent_id,hidden,replies{id,text,timestamp,username,from,parent_id,hidden}', limit: String(limit) } }
       ).then((r) =>
         (r.data ?? []).flatMap((c) => [
           c,
@@ -63,7 +64,7 @@ export function verifyMetaSignature(raw: Buffer, header: string | undefined, app
   return got.length === expected.length && timingSafeEqual(got, expected);
 }
 
-export type IgComment = { igUserId: string; commentId: string; mediaId: string | null; parentId: string | null; fromId: string | null; username: string | null; text: string; hidden?: boolean };
+export type IgComment = { igUserId: string; commentId: string; mediaId: string | null; parentId: string | null; fromId: string | null; username: string | null; text: string; hidden?: boolean; timestamp?: string | null };
 
 /** 웹훅 본문에서 댓글만 꺼냄 (object=instagram, entry[].changes[].field=comments). 그 밖의 이벤트는 무시 */
 export function parseCommentWebhook(body: unknown): IgComment[] {

@@ -237,6 +237,14 @@ export const InquiryDetailPage: React.FC = () => {
                 ) : (
                   rawMessages.map((m, idx) => {
                     const isCust = m.sender === 'customer';
+                    const tsLabel = m.created_at
+                      ? new Date(m.created_at).toLocaleString('ko-KR', {
+                          month: 'numeric',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '';
                     return (
                       <div key={idx} className={`msg ${isCust ? 'cust' : ''}`}>
                         <div className="msg-av" aria-hidden="true">
@@ -245,6 +253,7 @@ export const InquiryDetailPage: React.FC = () => {
                         <div className="bubble">
                           <div style={{ fontSize: 11.5, opacity: 0.75, marginBottom: 3 }}>
                             {senderLabel(m.sender)}
+                            {tsLabel ? ` · ${tsLabel}` : ''}
                           </div>
                           <div>{m.text}</div>
                         </div>
