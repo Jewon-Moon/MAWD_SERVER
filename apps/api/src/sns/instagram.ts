@@ -15,7 +15,7 @@ import type { SecretBox } from '../secrets.js';
 import { getTenantConfig, type TenantConfig } from '../tenantConfig.js';
 import { leaksPii, newVerifyState } from '../tools/orders.js';
 import { judge } from '../voice/judge.js';
-import type { CallSession } from '../voice/policy.js';
+import { hasOrderModificationIntent, prefilter, type CallSession } from '../voice/policy.js';
 import { businessContext } from '../voice/turn.js';
 
 type Db = ReturnType<typeof createDb>;
@@ -119,9 +119,16 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     if (!ig.enabled || !acct || c.fromId === acct.igUserId || (c.username && c.username === acct.username)) return { action: 'skipped', heat: null, reply: null };
 
     const sess = { id: randomUUID(), channel: 'chat', tenantId, inquiryId: '', state: 'LISTEN', verify: newVerifyState(), abuseStreak: 0, awaitingVerify: false, pendingQuestion: null, heat: 0, needsOwner: false, riskFlags: new Set<string>(), history: [], turnLatencies: [], orderData: [], ended: false } as CallSession;
+    const pf = prefilter(c.text, cfg, 'sns');
     const j = await judge(sess, c.text, { cfg, llm: deps.llm, bivia: deps.bivia });
-    const heat = j.heat ?? 0;
-    const shouldHide = (ig.auto_hide === 'abusive' && j.abusive) || (ig.auto_hide === 'abusive_or_heated' && (j.abusive || heat >= ig.hide_heat_gte));
+    const abusive = j.abusive || pf.abusive;
+    const heat = Math.max(j.heat ?? 0, pf.heatHint);
+    const catRule = j.category ? cfg.categories.find((cat) => cat.name === j.category) : undefined;
+    const ruleBlocked = pf.rules.some((r) => r.action === 'end_call');
+    const ruleNeedsOwner = pf.rules.length > 0 || catRule?.routing === 'approve' || catRule?.routing === 'intake_only';
+    const needsOwner = j.needsOwner || ruleNeedsOwner || hasOrderModificationIntent(c.text);
+    const riskFlags = Array.from(new Set([...j.riskFlags, ...pf.rules.map((r) => r.risk_flag || r.name).filter(Boolean)]));
+    const shouldHide = (ig.auto_hide === 'abusive' && (abusive || ruleBlocked)) || (ig.auto_hide === 'abusive_or_heated' && (abusive || ruleBlocked || heat >= ig.hide_heat_gte));
 
     let action: CommentResult['action'] = c.hidden ? 'hidden' : 'none';
     let reply: string | null = null;
@@ -132,7 +139,7 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
       } else if (shouldHide) {
         await client.hide(c.commentId, token);
         action = 'hidden';
-      } else if (ig.auto_reply && !j.needsOwner && !j.abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
+      } else if (ig.auto_reply && !needsOwner && !abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
         const draft = await draftReply(tenantId, cfg, c);
         if (draft) {
           await client.reply(c.commentId, draft, token);
@@ -145,24 +152,25 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     // 문의 기록 (댓글 하나 = 문의 하나). 실제 자동 답글을 달았을 때만 auto_done, 숨김 · 판단 필요 · 미답변은 사장님 확인 대기(pending)
     const parsedTs = c.timestamp ? new Date(c.timestamp) : null;
     const commentedAt = parsedTs && !Number.isNaN(parsedTs.getTime()) ? parsedTs : new Date();
-    const status = action === 'replied' && !j.needsOwner ? 'auto_done' : 'pending';
+    const status = action === 'replied' && !needsOwner ? 'auto_done' : 'pending';
     const inquiryId = await deps.db.withTenant(tenantId, async (tx) => {
       const [inq] = await tx.insert(s.inquiries).values({ tenantId, channel: 'sns', status, externalChatId: `ig:${c.commentId}`, customerName: c.username, createdAt: commentedAt, updatedAt: commentedAt })
         .onConflictDoUpdate({ target: [s.inquiries.tenantId, s.inquiries.externalChatId], set: { status, updatedAt: new Date() } })
         .returning({ id: s.inquiries.id });
       await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'customer', text: c.text, externalMessageId: c.commentId, createdAt: commentedAt });
       if (reply) await tx.insert(s.messages).values({ tenantId, inquiryId: inq!.id, sender: 'ai', text: reply });
-      await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner: j.needsOwner, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive: j.abusive, category: j.category, risk_flags: j.riskFlags, judged_by: j.by } });
+      await tx.insert(s.analyses).values({ tenantId, inquiryId: inq!.id, heat: Math.round(heat), needsOwner, category: j.category, raw: { source: 'instagram', comment_id: c.commentId, media_id: c.mediaId, action, abusive, category: j.category, risk_flags: riskFlags, judged_by: j.by } });
       if (action !== 'none') await tx.insert(s.actions).values({ tenantId, inquiryId: inq!.id, actor: 'ai', type: `instagram_${action}`, payload: { comment_id: c.commentId } });
       return inq!.id;
     });
 
     // 숨겼거나 판단이 필요하거나 격앙된 댓글만 알림 (원문 대신 사실만)
-    if (deps.alerts && (action === 'hidden' || j.needsOwner || heat >= cfg.settings.notifications.priority.high_heat_gte)) {
+    const ruleNotify = pf.rules.some((r) => r.notify);
+    if (deps.alerts && (action === 'hidden' || needsOwner || ruleNotify || heat >= cfg.settings.notifications.priority.high_heat_gte)) {
       await deps.alerts.emit(cfg, {
-        tenantId, inquiryId, channel: 'sns', kind: 'live', heat, riskFlags: j.riskFlags, needsOwner: j.needsOwner,
+        tenantId, inquiryId, channel: 'sns', kind: 'live', heat, riskFlags, needsOwner,
         title: action === 'hidden' ? '인스타 악성 댓글을 숨겼어요' : '인스타 댓글 확인 필요',
-        message: [`@${c.username ?? '알 수 없음'}`, `감정 ${Math.round(heat)}점`, j.abusive ? '욕설 · 비하 표현' : null, ...j.riskFlags, j.needsOwner ? '사장님 판단 필요' : null].filter(Boolean).join(' · '),
+        message: [`@${c.username ?? '알 수 없음'}`, `감정 ${Math.round(heat)}점`, abusive ? '욕설 · 비하 표현' : null, ...riskFlags, needsOwner ? '사장님 판단 필요' : null].filter(Boolean).join(' · '),
       }).catch(() => null);
     }
     deps.alerts?.emitEvent?.(tenantId, 'inquiry', { id: inquiryId });

@@ -73,14 +73,15 @@ export function hasOrderModificationIntent(text: string): boolean {
 export type Prefilter = { abusive: boolean; heatHint: number; orderIntent: boolean; closing: boolean; rules: Rule[] };
 
 /** 첫 판정은 키워드로 즉시 (0ms). LLM 분석은 병렬로 돌고 다음 턴에 반영 */
-export function prefilter(text: string, cfg: TenantConfig): Prefilter {
+export function prefilter(text: string, cfg: TenantConfig, channel: 'call' | 'chat' | 'sns' = 'call'): Prefilter {
   const t = text.replace(/\s+/g, ' ');
   const squeezed = INNOCENT.reduce((acc, w) => acc.replaceAll(w, ''), lettersOnly(t));
   const abusive = BASE_ABUSE.some((w) => squeezed.includes(w));
   const angerHits = ANGER.filter((w) => t.includes(w)).length + (t.match(/!{2,}/g)?.length ?? 0);
   const heatHint = abusive ? 90 : Math.min(85, angerHits * 30);
+  const matchChannel = channel === 'sns' ? 'chat' : channel;
   const rules = cfg.rules
-    .filter((r) => r.enabled && (!r.match.channels || r.match.channels.includes('call')))
+    .filter((r) => r.enabled && (!r.match.channels || r.match.channels.includes(matchChannel)))
     .filter((r) =>
       (!r.match.keywords || r.match.keywords.some((k) => t.includes(k))) &&
       (r.match.heat_gte === undefined || heatHint >= r.match.heat_gte) &&
