@@ -23,6 +23,8 @@ export function createInstagramClient(fetchFn: typeof fetch = fetch, base = GRAP
     reply: (commentId: string, message: string, token: string) => call<{ id: string }>(`${commentId}/replies`, token, { method: 'POST', query: { message } }),
     /** 통합 로그인: 이 토큰(비즈니스 시스템 사용자)에 할당된 인스타 계정들 */
     assignedAccounts: (token: string) => call<{ data?: { id: string; username?: string }[] }>('me/assigned_instagram_accounts', token, { query: { fields: 'id,username' } }).then((r) => r.data ?? []),
+    /** 통합 로그인: 토큰이 인스타 계정 자체를 가리키는 경우 (대시보드에서 계정별로 만든 토큰) */
+    profile: (token: string) => call<{ id: string; username?: string }>('me', token, { query: { fields: 'id,username' } }),
     /** 통합 로그인: 이 인스타 계정의 댓글 · DM 이벤트를 우리 앱 웹훅으로 받도록 구독 (안 하면 웹훅이 안 옴) */
     subscribe: (igUserId: string, token: string) => call<{ success?: boolean }>(`${igUserId}/subscribed_apps`, token, { method: 'POST', query: { subscribed_fields: 'comments,messages' } }),
   };

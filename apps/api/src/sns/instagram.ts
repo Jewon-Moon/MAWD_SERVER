@@ -47,9 +47,10 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
 
   /** 통합 로그인 콜백에서 받은 토큰으로 연결: 할당된 인스타 계정 찾기 → 웹훅 구독 → 저장 */
   async function connectUnified(tenantId: string, accessToken: string) {
-    const accounts = await deps.igFb.assignedAccounts(accessToken);
+    // 비즈니스 시스템 사용자 토큰(OAuth 콜백)은 할당된 계정 목록으로, 대시보드에서 계정별로 만든 토큰은 토큰 자신이 계정
+    const accounts = await deps.igFb.assignedAccounts(accessToken).catch(() => []);
     // shortcut: 할당된 계정이 여러 개면 첫 번째만. 여러 계정을 쓰는 매장이 생기면 고르는 화면
-    const a = accounts[0];
+    const a = accounts[0] ?? await deps.igFb.profile(accessToken).then((p) => (p.username ? p : null)).catch(() => null);
     if (!a) throw new ApiError(400, 'instagram_no_account', '연결된 인스타그램 계정을 찾지 못했어요. 로그인할 때 인스타 계정을 선택했는지 확인해 주세요.');
     // 구독 실패해도 연결은 저장 (대시보드에서 수동 구독 가능). 실패 사유는 로그로
     await deps.igFb.subscribe(a.id, accessToken).catch((err) => deps.log?.error({ err, ig: a.id }, 'instagram webhook subscribe failed'));
@@ -57,9 +58,16 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
   }
 
   /** 토큰으로 계정을 확인하고 매장에 연결 (토큰은 암호화 저장). 다른 매장이 이미 연결한 계정이면 409 */
+  /** 붙여넣은 토큰으로 연결. Instagram 로그인 토큰(graph.instagram.com)이 아니면 통합 로그인 토큰(graph.facebook.com)으로 다시 확인
+   *  (Meta 대시보드 "통합 로그인 API 설정"의 토큰 생성 버튼은 Facebook 방식 토큰을 줌) */
   async function connect(tenantId: string, accessToken: string) {
-    const me = await deps.ig.me(accessToken).catch((e: Error) => { throw new ApiError(400, 'instagram_token_invalid', `토큰을 확인하지 못했어요: ${e.message}`); });
-    return save(tenantId, me.user_id, me.username ?? null, { access_token: accessToken, api: 'instagram' });
+    const me = await deps.ig.me(accessToken).catch(() => null);
+    if (me) return save(tenantId, me.user_id, me.username ?? null, { access_token: accessToken, api: 'instagram' });
+    try { return await connectUnified(tenantId, accessToken); }
+    catch (e) {
+      if (e instanceof ApiError && e.status === 409) throw e;
+      throw new ApiError(400, 'instagram_token_invalid', `토큰을 확인하지 못했어요: ${e instanceof Error ? e.message : ''}`.slice(0, 300));
+    }
   }
 
   async function status(tenantId: string) {
