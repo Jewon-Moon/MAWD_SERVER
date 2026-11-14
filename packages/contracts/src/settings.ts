@@ -132,7 +132,7 @@ export const Voice = z.object({
     pitch: z.number().min(0).max(2).describe('browser 엔진에서만 적용'),
     instructions: z.string().max(500).describe('openai 엔진의 말투 지시 (예: "차분하고 따뜻하게")'),
   }),
-  silence_ms: z.number().int().min(300).max(2000).describe('이만큼 조용하면 고객 발화 종료로 판단'),
+  silence_ms: z.number().int().min(300).max(3000).describe('이만큼 조용하면 고객 발화 종료로 판단 (Vapi: 문장부호 없이 끝났을 때 대기, 짧으면 숨 고르는 사이에 끊김. 기본 1200)'),
   filler: z.object({ enabled: z.boolean(), phrases: z.array(z.string().min(1)).max(20) }),
   barge_in: z.boolean().describe('AI가 말하는 중 고객이 말하면 즉시 멈춤'),
   abuse_turn_limit: z.number().int().min(1).max(10).describe('욕설이 이만큼 연속되면 경고 후 종료'),

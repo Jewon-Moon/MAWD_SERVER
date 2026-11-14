@@ -8,6 +8,13 @@ const VAPI_API = 'https://api.vapi.ai';
 const VAPI_OPENAI_VOICES = new Set(['alloy', 'echo', 'fable', 'nova', 'onyx', 'shimmer', 'marin', 'cedar']);
 export const SECRET_HEADER = 'x-mawd-secret';
 
+// 음성 인식이 자주 틀리는 상담 단어 + 매장 상품명 (Deepgram 키워드 힌트). 예: "재질"이 "기술"로 들리던 문제
+const SUPPORT_TERMS = ['재질', '사이즈', '교환', '환불', '반품', '배송', '택배', '송장', '주문번호', '불량', '파손', '품절', '쿠폰', '결제', '취소'];
+export function keytermsOf(cfg: TenantConfig): string[] {
+  const names = [...cfg.context.offerings.matchAll(/^##\s+(.+?)(?:\s+\(|\s+—|$)/gm)].map((m) => m[1]!.trim());
+  return [...new Set([cfg.storeName, ...names, ...SUPPORT_TERMS])].filter((t) => t && t.length <= 40).slice(0, 50);
+}
+
 /** 매장 설정 → Vapi 어시스턴트 설정. 매장이 음성 설정을 바꾸면 다시 동기화(POST /v1/vapi/assistant/sync) */
 export function vapiAssistantConfig(cfg: TenantConfig, o: { baseUrl: string; webhookToken: string; secret?: string; tenantId: string }) {
   const v = cfg.settings.voice;
@@ -23,8 +30,17 @@ export function vapiAssistantConfig(cfg: TenantConfig, o: { baseUrl: string; web
       voiceId: VAPI_OPENAI_VOICES.has(v.tts.voice_name ?? '') ? v.tts.voice_name : 'marin',
       speed: v.tts.rate, ...(v.tts.instructions ? { instructions: v.tts.instructions } : {}),
     },
-    transcriber: { provider: 'deepgram', model: 'nova-3', language: 'ko' },
-    startSpeakingPlan: { waitSeconds: Math.min(5, v.silence_ms / 1000) },
+    // endpointing: Deepgram이 조용해진 뒤 문장을 확정하기까지 (짧으면 숨 고르는 사이에 문장이 잘림)
+    transcriber: { provider: 'deepgram', model: 'nova-3', language: 'ko', endpointing: 300, keyterm: keytermsOf(cfg) },
+    // 한국어 인식 결과는 문장부호가 거의 없어 onNoPunctuationSeconds가 사실상 "말 끝 판단 시간" (매장 설정 silence_ms)
+    startSpeakingPlan: {
+      waitSeconds: 0.4,
+      transcriptionEndpointingPlan: {
+        onPunctuationSeconds: Math.min(3, Math.max(0.3, v.silence_ms / 2000)),
+        onNoPunctuationSeconds: Math.min(3, v.silence_ms / 1000),
+        onNumberSeconds: Math.min(3, Math.max(1, v.silence_ms / 1000)), // 주문번호 · 전화번호를 끊어 부르는 동안 기다림
+      },
+    },
     // 끼어들기를 끈 매장은 고객이 꽤 길게(10단어) 말해야 멈춤 (Vapi에 완전히 끄는 옵션은 없음)
     stopSpeakingPlan: { numWords: v.barge_in ? 0 : 10 },
     maxDurationSeconds: v.max_call_minutes * 60,

@@ -69,8 +69,11 @@ export function vapiRoutes(deps: { db: Db; llm: Llm; vapi: VapiClient; alerts?: 
     }, async (req, reply) => {
       const tenantId = await tenantFor(req);
       const callId = req.body.call?.id ?? (() => { throw new ApiError(400, 'vapi_call_missing', 'call 객체가 없습니다 (어시스턴트의 metadataSendMode를 variable로).'); })();
-      const last = req.body.messages.at(-1);
-      const userText = last?.role === 'user' ? textOf(last.content).trim() : '';
+      // 맨 끝의 연속된 고객 발화를 한 턴으로 (말이 잘려 두 번에 나뉘어 와도 앞부분을 잃지 않게)
+      const msgs = req.body.messages;
+      let i = msgs.length;
+      while (i > 0 && msgs[i - 1]!.role === 'user') i--;
+      const userText = msgs.slice(i).map((m) => textOf(m.content).trim()).filter(Boolean).join(' ');
 
       let sess = sessions.get(callId);
       let greeting: string | null = null;
