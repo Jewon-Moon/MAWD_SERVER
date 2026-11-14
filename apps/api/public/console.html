@@ -662,8 +662,7 @@ async function loadVapi() {
   $('vapiStatus').replaceChildren(
     line('Vapi 통화', h('span', { className: `pill ${cfg.enabled ? 'on' : 'off'}`, textContent: cfg.enabled ? '사용 중' : '꺼짐 (브라우저 통화로 대체)' })),
     line('음성 엔진 설정', h('code', { textContent: voice.tts.engine })),
-    // Vapi는 Custom LLM과 함께 coral · ash · ballad · sage · verse를 거부해서 서버가 marin으로 바꿔 씀 (integrations/vapi.ts)
-    line('목소리 · 속도', h('span', { textContent: `${voice.tts.voice_name ?? 'coral'} · ${voice.tts.rate}배` + (cfg.enabled && !['alloy', 'echo', 'fable', 'nova', 'onyx', 'shimmer', 'marin', 'cedar'].includes(voice.tts.voice_name) ? ' (Vapi 통화에서는 marin)' : '') })),
+    line('통화 목소리', h('span', { textContent: `${voice.vapi_voice.provider} · ${voice.vapi_voice.voice_id} · ${voice.tts.rate}배 (매장 설정 → 전화 → vapi_voice)` })),
     line('어시스턴트 id', h('code', { textContent: cfg.assistant_id ?? '(아직 없음, 동기화하면 생성)' })));
 }
 $('vapiSync').onclick = async () => {

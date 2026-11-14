@@ -132,6 +132,11 @@ export const Voice = z.object({
     pitch: z.number().min(0).max(2).describe('browser 엔진에서만 적용'),
     instructions: z.string().max(500).describe('openai 엔진의 말투 지시 (예: "차분하고 따뜻하게")'),
   }),
+  vapi_voice: z.object({
+    provider: z.enum(['azure', '11labs', 'openai']).describe('Vapi 통화 목소리 제공사. azure=한국어 원어민 신경망 음성(자연스럽고 빠름, 기본), 11labs=ElevenLabs, openai=OpenAI(한국어 억양이 기계적)'),
+    voice_id: z.string().min(1).max(100).describe('azure: ko-KR-SunHiNeural(여) · ko-KR-SeoHyeonNeural(여) · ko-KR-InJoonNeural(남) 등 / 11labs: 보이스 ID / openai: alloy · echo · fable · nova · onyx · shimmer · marin · cedar'),
+    model: z.string().max(60).nullable().describe('11labs만: eleven_flash_v2_5(빠름, 기본) · eleven_multilingual_v2(품질) 등. 나머지는 null'),
+  }).describe('Vapi 통화의 목소리 (voice.tts.rate가 속도로 적용)'),
   silence_ms: z.number().int().min(300).max(3000).describe('이만큼 조용하면 고객 발화 종료로 판단 (Vapi: 문장부호 없이 끝났을 때 대기, 짧으면 숨 고르는 사이에 끊김. 기본 1200)'),
   filler: z.object({ enabled: z.boolean(), phrases: z.array(z.string().min(1)).max(20) }),
   barge_in: z.boolean().describe('AI가 말하는 중 고객이 말하면 즉시 멈춤'),

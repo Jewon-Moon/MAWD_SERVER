@@ -65,6 +65,7 @@ export const defaultSettings: AllSettings = {
       engine: 'vapi', voice_name: 'coral', rate: 1.2, pitch: 1,
       instructions: '한국 온라인 쇼핑몰의 친절한 고객센터 상담원. 차분하고 따뜻한 목소리로 공감하며 말한다. 자연스러운 서울 표준어 억양.',
     },
+    vapi_voice: { provider: 'azure', voice_id: 'ko-KR-SunHiNeural', model: null },
     silence_ms: 1200,
     filler: { enabled: true, phrases: ['네, 확인해 볼게요.', '잠시만요.'] },
     barge_in: true,

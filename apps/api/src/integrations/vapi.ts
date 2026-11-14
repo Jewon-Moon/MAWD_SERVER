@@ -10,6 +10,18 @@ export const SECRET_HEADER = 'x-mawd-secret';
 
 // 음성 인식이 자주 틀리는 상담 단어 + 매장 상품명 (Deepgram 키워드 힌트). 예: "재질"이 "기술"로 들리던 문제
 const SUPPORT_TERMS = ['재질', '사이즈', '교환', '환불', '반품', '배송', '택배', '송장', '주문번호', '불량', '파손', '품절', '쿠폰', '결제', '취소'];
+/** 매장의 통화 목소리 → Vapi voice. 제공사마다 속도 범위가 달라 맞춰 넣음 */
+function vapiVoice(v: TenantConfig['settings']['voice']) {
+  const { provider, voice_id, model } = v.vapi_voice;
+  const rate = v.tts.rate;
+  if (provider === 'azure') return { provider, voiceId: voice_id, speed: Math.min(2, Math.max(0.5, rate)) };
+  if (provider === '11labs') return { provider, voiceId: voice_id, model: model || 'eleven_flash_v2_5', language: 'ko', speed: Math.min(1.2, Math.max(0.7, rate)) };
+  return {
+    provider: 'openai', model: 'gpt-4o-mini-tts', voiceId: VAPI_OPENAI_VOICES.has(voice_id) ? voice_id : 'marin',
+    speed: rate, ...(v.tts.instructions ? { instructions: v.tts.instructions } : {}),
+  };
+}
+
 export function keytermsOf(cfg: TenantConfig): string[] {
   const names = [...cfg.context.offerings.matchAll(/^##\s+(.+?)(?:\s+\(|\s+—|$)/gm)].map((m) => m[1]!.trim());
   return [...new Set([cfg.storeName, ...names, ...SUPPORT_TERMS])].filter((t) => t && t.length <= 40).slice(0, 50);
@@ -25,11 +37,7 @@ export function vapiAssistantConfig(cfg: TenantConfig, o: { baseUrl: string; web
     // 인사도 우리 서버가 만듦 (매장 템플릿 · AI 고지 · 통화 기록 시작을 한곳에서)
     firstMessageMode: 'assistant-speaks-first-with-model-generated-message',
     model: { provider: 'custom-llm', url: root, model: 'mawd-call', headers, metadataSendMode: 'variable', timeoutSeconds: 20 },
-    voice: {
-      provider: 'openai', model: 'gpt-4o-mini-tts',
-      voiceId: VAPI_OPENAI_VOICES.has(v.tts.voice_name ?? '') ? v.tts.voice_name : 'marin',
-      speed: v.tts.rate, ...(v.tts.instructions ? { instructions: v.tts.instructions } : {}),
-    },
+    voice: vapiVoice(v),
     // endpointing: Deepgram이 조용해진 뒤 문장을 확정하기까지 (짧으면 숨 고르는 사이에 문장이 잘림)
     transcriber: { provider: 'deepgram', model: 'nova-3', language: 'ko', endpointing: 300, keyterm: keytermsOf(cfg) },
     // 한국어 인식 결과는 문장부호가 거의 없어 onNoPunctuationSeconds가 사실상 "말 끝 판단 시간" (매장 설정 silence_ms)
