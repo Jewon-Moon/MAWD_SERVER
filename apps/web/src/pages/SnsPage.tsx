@@ -23,10 +23,11 @@ function handledBadge(it: InquiryItem): { label: string; tone: 'green' | 'blue' 
 }
 
 export const SnsPage: React.FC = () => {
-  const { data, setHandled, showToast } = useApp();
+  const { data, setHandled, pullServer, showToast } = useApp();
   const [filter, setFilter] = useState<SnsFilter>('all');
   const [igConn, setIgConn] = useState<InstagramConnection | null>(null);
   const [igLoading, setIgLoading] = useState<boolean>(false);
+  const [syncing, setSyncing] = useState<boolean>(false);
   const [tokenInput, setTokenInput] = useState<string>('');
   const [connecting, setConnecting] = useState<boolean>(false);
   const [replyOpenId, setReplyOpenId] = useState<string | null>(null);
@@ -150,7 +151,37 @@ export const SnsPage: React.FC = () => {
     }
   };
 
+  const handleSyncComments = useCallback(async (silent = false) => {
+    if (!Api.token() || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await Api.syncInstagram();
+      await pullServer();
+      if (!silent) {
+        showToast(
+          res.imported > 0
+            ? `새 댓글 ${res.imported}건을 가져왔습니다`
+            : `확인 완료 (새 댓글 없음 · 총 ${res.fetched}건 확인)`
+        );
+      }
+    } catch (err: unknown) {
+      if (!silent) {
+        const msg = err instanceof Error ? err.message : '댓글 동기화에 실패했습니다';
+        showToast(msg);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }, [pullServer, showToast, syncing]);
+
   const isConnected = Boolean(igConn?.connected || igConn?.username || igConn?.ig_user_id);
+
+  useEffect(() => {
+    if (hasToken && isConnected) {
+      void handleSyncComments(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasToken, isConnected]);
 
   return (
     <Layout title="SNS" subtitle="인스타그램 댓글 · 자동 숨김 · 공개 답글">
@@ -185,14 +216,24 @@ export const SnsPage: React.FC = () => {
                     {igConn?.ig_user_id ? `IG User ID: ${igConn.ig_user_id}` : '댓글 수집 및 자동 응대 연동 중'}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  className="btn danger sm"
-                  onClick={handleDisconnect}
-                  disabled={connecting}
-                >
-                  연결 해제
-                </button>
+                <div className="btn-row">
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={() => void handleSyncComments(false)}
+                    disabled={syncing || connecting}
+                  >
+                    {syncing ? '동기화 중...' : '댓글 새로고침'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn danger sm"
+                    onClick={handleDisconnect}
+                    disabled={connecting}
+                  >
+                    연결 해제
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

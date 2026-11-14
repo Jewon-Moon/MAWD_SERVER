@@ -138,6 +138,7 @@ export const Api = {
   connectInstagram: (access_token: string) =>
     Api.req('/instagram/connection', { method: 'PUT', body: JSON.stringify({ access_token }) }),
   disconnectInstagram: () => Api.req('/instagram/connection', { method: 'DELETE' }),
+  syncInstagram: () => Api.req<{ fetched: number; imported: number; skipped: number }>('/instagram/sync', { method: 'POST', body: '{}' }),
   instagramOauthUrl: () => `${Api.base()}/v1/instagram/oauth/start`,
 
   /* Settings & Knowledge */

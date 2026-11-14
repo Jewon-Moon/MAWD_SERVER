@@ -94,6 +94,7 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
 
     // ---- 매장 연결 (사장님 화면) ----
     app.get('/instagram/connection', { schema: { tags: ['instagram'], response: { 200: Status }, description: '연결된 인스타 계정' } }, async (req) => deps.instagram.status(tenantOf(req)));
+    app.post('/instagram/sync', { schema: { tags: ['instagram'], response: { 200: z.object({ fetched: z.number(), imported: z.number(), skipped: z.number() }) }, description: '연결된 인스타 게시물 댓글 동기화' } }, async (req) => deps.instagram.syncComments(tenantOf(req)));
     app.put('/instagram/connection', {
       schema: { tags: ['instagram'], body: z.object({ access_token: z.string().min(20).max(1000) }), response: { 200: Status }, description: '액세스 토큰으로 계정을 확인하고 연결 (토큰은 암호화 저장). 틀리면 400, 다른 매장 계정이면 409' },
     }, async (req) => deps.instagram.connect(tenantOf(req), req.body.access_token));

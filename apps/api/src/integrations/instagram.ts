@@ -27,6 +27,16 @@ export function createInstagramClient(fetchFn: typeof fetch = fetch, base = GRAP
     profile: (token: string) => call<{ id: string; username?: string }>('me', token, { query: { fields: 'id,username' } }),
     /** 통합 로그인: 이 인스타 계정의 댓글 · DM 이벤트를 우리 앱 웹훅으로 받도록 구독 (안 하면 웹훅이 안 옴) */
     subscribe: (igUserId: string, token: string) => call<{ success?: boolean }>(`${igUserId}/subscribed_apps`, token, { method: 'POST', query: { subscribed_fields: 'comments,messages' } }),
+    /** 최근 게시물 목록 (댓글 수동/폴링 동기화용) */
+    listMedia: (igUserId: string, token: string, limit = 10) =>
+      call<{ data?: { id: string }[] }>(`${igUserId}/media`, token, { query: { fields: 'id', limit: String(limit) } }).then((r) => r.data ?? []),
+    /** 게시물의 댓글 목록 */
+    listComments: (mediaId: string, token: string, limit = 25) =>
+      call<{ data?: { id: string; text?: string; username?: string; from?: { id?: string; username?: string }; parent_id?: string }[] }>(
+        `${mediaId}/comments`,
+        token,
+        { query: { fields: 'id,text,username,from,parent_id', limit: String(limit) } }
+      ).then((r) => r.data ?? []),
   };
 }
 

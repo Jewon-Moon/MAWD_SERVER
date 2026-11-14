@@ -62,7 +62,10 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
    *  (Meta 대시보드 "통합 로그인 API 설정"의 토큰 생성 버튼은 Facebook 방식 토큰을 줌) */
   async function connect(tenantId: string, accessToken: string) {
     const me = await deps.ig.me(accessToken).catch(() => null);
-    if (me) return save(tenantId, me.user_id, me.username ?? null, { access_token: accessToken, api: 'instagram' });
+    if (me) {
+      await deps.ig.subscribe(me.user_id, accessToken).catch((err) => deps.log?.error({ err, ig: me.user_id }, 'instagram webhook subscribe failed'));
+      return save(tenantId, me.user_id, me.username ?? null, { access_token: accessToken, api: 'instagram' });
+    }
     try { return await connectUnified(tenantId, accessToken); }
     catch (e) {
       if (e instanceof ApiError && e.status === 409) throw e;
@@ -152,6 +155,48 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     return { action, heat, reply };
   }
 
-  return { connect, connectUnified, status, disconnect, handleComment };
+  /** Graph API로 최근 게시물의 댓글을 직접 동기화 (웹훅 미도착/연결 전 댓글 보완) */
+  async function syncComments(tenantId: string): Promise<{ fetched: number; imported: number; skipped: number }> {
+    const [acct] = await deps.db.withTenant(tenantId, (tx) => tx.select().from(s.instagramAccounts), { readOnly: true });
+    if (!acct) throw new ApiError(400, 'instagram_not_connected', '인스타그램이 연결되어 있지 않습니다.');
+    const { token, client } = await credOf(tenantId);
+    const media = await client.listMedia(acct.igUserId, token, 10);
+    const existing = await deps.db.withTenant(tenantId, (tx) =>
+      tx.select({ ext: s.inquiries.externalChatId }).from(s.inquiries).where(eq(s.inquiries.channel, 'sns')),
+      { readOnly: true }
+    );
+    const seen = new Set(existing.map((r) => r.ext).filter((x): x is string => Boolean(x)));
+
+    let fetched = 0;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const m of media) {
+      const comments = await client.listComments(m.id, token, 25).catch(() => []);
+      for (const cm of comments) {
+        fetched += 1;
+        const text = (cm.text ?? '').trim().slice(0, 2200);
+        if (!cm.id || !text || seen.has(`ig:${cm.id}`)) {
+          skipped += 1;
+          continue;
+        }
+        seen.add(`ig:${cm.id}`);
+        const res = await handleComment(tenantId, {
+          igUserId: acct.igUserId,
+          commentId: cm.id,
+          mediaId: m.id,
+          parentId: cm.parent_id ?? null,
+          fromId: cm.from?.id ?? null,
+          username: cm.from?.username ?? cm.username ?? null,
+          text,
+        });
+        if (res.action === 'skipped') skipped += 1;
+        else imported += 1;
+      }
+    }
+    return { fetched, imported, skipped };
+  }
+
+  return { connect, connectUnified, status, disconnect, handleComment, syncComments };
 }
 export type InstagramService = ReturnType<typeof createInstagramService>;
