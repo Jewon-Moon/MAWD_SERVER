@@ -41,6 +41,7 @@ const CONFIG = {
   menu: [
     { id:'dashboard', icon:'📊', label:'현황',      path:'index.html' },
     { id:'inquiries', icon:'📋', label:'문의',      path:'inquiries.html', badge:'held' },
+    { id:'sns',       icon:'📷', label:'SNS',       path:'sns.html' },
     { id:'channels',  icon:'💬', label:'채널',      path:'channels.html' },
     { id:'customers', icon:'👤', label:'고객',      path:'customer/list.html' },
     { id:'settings',  icon:'⚙️', label:'설정',      path:'settings/main.html' },

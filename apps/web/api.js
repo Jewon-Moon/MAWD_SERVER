@@ -57,7 +57,7 @@ const Api = {
   patchSettings(section, body) { return this.req('PATCH', '/settings/' + section, body); },
   resetSettings(sections) { return this.req('POST', '/settings/reset', { sections }); },
   dashboardSummary() { return this.req('GET', '/dashboard/summary'); },
-  inquiries(limit = 100) { return this.req('GET', '/inquiries?limit=' + limit); },
+  inquiries(limit = 30) { return this.req('GET', '/inquiries?limit=' + limit); },
   inquiryDetail(id) { return this.req('GET', `/inquiries/${id}`); },
   inquiryMessages(id, raw = false) { return this.req('GET', `/inquiries/${id}/messages?raw=${raw ? 'true' : 'false'}`); },
   inquiryAction(id, action) { return this.req('POST', `/inquiries/${id}/actions`, action); },

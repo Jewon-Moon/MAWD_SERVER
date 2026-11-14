@@ -101,7 +101,7 @@ function pageDashboard() {
     const m = Judge.meta(it.verdict);
     const lv = Judge.level(it.urgency);
     const why = (it._why || []).length ? (it._why || []).join(' · ') : '일반';
-    return `<a class="row" href="${L.inquiries}">
+    return `<a class="row" href="${L.inquiries}?id=${encodeURIComponent(it.id)}">
       <span class="chip ${lv.tone}" style="flex-shrink:0;min-width:34px;text-align:center">${lv.label}</span>
       <span class="row-body">
         <span class="row-t1">${who(it.customer)} · ${m.label}
@@ -158,7 +158,7 @@ const rawMsgsCache = {};
 
 async function hydrateInquiries(items) {
   if (typeof Api === 'undefined' || !Api.token()) return;
-  const targets = items.filter(it => it.server && !it.detail && !inqHydrating.has(it.id)).slice(0, 8);
+  const targets = items.filter(it => it.server && !it.detail && !inqHydrating.has(it.id)).slice(0, 3);
   if (!targets.length) return;
   targets.forEach(it => inqHydrating.add(it.id));
   let updated = false;
@@ -178,6 +178,24 @@ async function hydrateInquiries(items) {
   }));
   const busy = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
   if (updated && !busy && document.body.dataset.page === 'inquiries') render();
+}
+
+async function hydrateOneInquiry(id) {
+  if (typeof Api === 'undefined' || !Api.token() || inqHydrating.has(id)) return;
+  inqHydrating.add(id);
+  try {
+    const detail = await Api.inquiryDetail(id);
+    const d = Store.load();
+    const target = d.items.find(x => String(x.id) === String(id));
+    if (target) {
+      target.detail = detail;
+      Store.save(d);
+    }
+  } catch (e) { /* 무시 */ } finally {
+    inqHydrating.delete(id);
+  }
+  const busy = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (!busy && document.body.dataset.page === 'inquiries') render();
 }
 
 function renderServerCardBlock(it) {
@@ -217,7 +235,95 @@ function renderServerCardBlock(it) {
     ${risks}${demands}${facts}${recs}`;
 }
 
+function pageInquiryDetail(id) {
+  const d = Store.load();
+  const it = d.items.find(x => String(x.id) === String(id));
+  if (!it) {
+    return `<div class="sec">
+      ${empty('📋', '문의를 찾을 수 없습니다', '목록으로 돌아가서 다시 확인해 주세요.')}
+      <a class="btn block" href="${L.inquiries}" style="margin-top:10px">문의 목록으로 ›</a>
+    </div>`;
+  }
+  if (it.server && !it.detail) setTimeout(() => hydrateOneInquiry(it.id), 0);
+
+  const detail = it.detail || {};
+  const msgs = rawMsgsCache[it.id] || detail.messages || [];
+  const actions = detail.actions || [];
+  const statusChip = it.handled === 'auto' ? '<span class="chip blue">AI 자동 응대</span>'
+    : it.handled === 'sent' ? '<span class="chip green">사장님 답변 완료</span>'
+    : it.handled === 'ignored' ? '<span class="chip gray">종료(무시)</span>'
+    : it.serverStatus === 'manual' ? '<span class="chip blue">직접 응대 중</span>'
+    : it.verdict === 'held' ? `<span class="chip ${it.heatLabel === '매우 높음' ? 'red' : 'gold'}">${esc(it.heatLabel || '확인 필요')}</span>`
+    : '<span class="chip green">일반 문의</span>';
+
+  return `
+  <div class="sec">
+    <div class="sec-head">
+      <a class="more" href="${L.inquiries}" style="margin-left:0">‹ 문의 목록</a>
+      <span class="chip gray">${esc(it.channel)}</span>
+      ${it.category ? `<span class="chip gray">${esc(it.category)}</span>` : ''}
+      ${it.route ? `<span class="chip gray">경로 ${esc(it.route)}</span>` : ''}
+      <span style="margin-left:auto">${statusChip}</span>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:15px">${who(it.customer)}</span>
+        <span class="row-t2">${ago(it.ts)} · 격앙 점수 ${it.score ?? 0}점</span>
+      </div>
+      <div class="eyebrow">AI 요약 카드</div>
+      ${it.server ? renderServerCardBlock(it) : `<div class="quote">${esc(Store.summary(it))}</div>`}
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-head">
+      <h2>대화 · 원문 기록 (${msgs.length}건)</h2>
+      ${it.server ? `<button type="button" class="btn sm ghost" data-act="raw-msg" data-id="${it.id}">
+        ${rawMsgsCache[it.id] ? '마스킹 보기' : '원문 보기 (감사 로그)'}
+      </button>` : ''}
+    </div>
+    <div class="card">
+      ${msgs.length ? msgs.map(m => `
+        <div class="msg ${m.sender === 'customer' ? 'them' : 'ai'}" style="margin-bottom:8px">
+          <div class="msg-av">${m.sender === 'customer' ? '👤' : m.sender === 'owner' ? '👑' : '🛡'}</div>
+          <div class="bubble">${esc(m.text)}</div>
+        </div>`).join('') : `<div class="quote">${esc(it.text || '내용 없음')}</div>`}
+    </div>
+  </div>
+
+  ${actions.length ? `
+    <div class="sec">
+      <div class="eyebrow">처리 이력 (${actions.length}건)</div>
+      <div class="list">
+        ${actions.map(ac => `
+          <div class="row">
+            <span class="row-body">
+              <span class="row-t1">${esc(ac.actor || 'system')} · ${esc(ac.type)}</span>
+              ${ac.created_at ? `<span class="row-t2">${esc(String(ac.created_at).slice(0, 19).replace('T', ' '))}</span>` : ''}
+            </span>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}
+
+  <div class="sec">
+    <div class="eyebrow">사장님 처리</div>
+    <div class="card">
+      <textarea class="textarea" id="draft-${it.id}" data-draft="${it.id}" rows="4"
+        placeholder="고객에게 전달할 답변을 직접 입력하거나 위 추천안을 불러오세요">${esc(it.draft || it.reply || '')}</textarea>
+      <div class="btn-row" style="margin-top:12px;flex-wrap:wrap">
+        <button class="btn danger" data-act="handle" data-id="${it.id}" data-how="ignored">종료(무시)</button>
+        ${it.server ? `<button class="btn ghost" data-act="handle" data-id="${it.id}" data-how="manual">직접 응대(AI 끔)</button>` : ''}
+        <button class="btn" data-act="handle" data-id="${it.id}" data-how="sent">답변 저장 및 전송</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function pageInquiries() {
+  const qId = new URLSearchParams(location.search).get('id');
+  if (qId) return pageInquiryDetail(qId);
+
   const d = Store.load();
   const pending = d.items.filter(it => !it.handled);
   const handled = d.items.filter(it => it.handled);
@@ -268,6 +374,7 @@ function pageInquiries() {
       </div>
 
       <div class="btn-row" style="margin-top:13px;flex-wrap:wrap">
+        <a class="btn ghost" href="${L.inquiries}?id=${encodeURIComponent(it.id)}">상세 보기 ›</a>
         <button class="btn danger" data-act="handle" data-id="${it.id}" data-how="ignored">종료(무시)</button>
         ${it.server ? `<button class="btn ghost" data-act="handle" data-id="${it.id}" data-how="manual">직접 응대(AI 끔)</button>` : ''}
         <button class="btn" data-act="handle" data-id="${it.id}" data-how="sent">답변 저장 및 전송</button>
@@ -284,13 +391,14 @@ function pageInquiries() {
   };
 
   const handledHtml = handled.length ? `<div class="list">${handled.map(it => `
-    <div class="row">
+    <a class="row" href="${L.inquiries}?id=${encodeURIComponent(it.id)}">
       <span class="dot ${it.handled === 'ignored' ? 'gold' : 'green'}"></span>
       <span class="row-body">
         <span class="row-t1">${who(it.customer)} · <span class="chip ${it.handled === 'auto' ? 'blue' : it.handled === 'ignored' ? 'gray' : 'green'}">${handledLabel(it)}</span></span>
         <span class="row-t2">${esc(Store.summary(it))} · ${esc(it.channel)} · ${ago(it.ts)}</span>
       </span>
-    </div>`).join('')}</div>` : '<div class="note">처리한 문의가 없습니다.</div>';
+      <span class="chev">›</span>
+    </a>`).join('')}</div>` : '<div class="note">처리한 문의가 없습니다.</div>';
 
   return `
     <div class="sec">
@@ -342,6 +450,84 @@ function pageStorehouse() {
           </div>
         </div>`).join('')}
     </div>`;
+}
+
+let snsFilter = 'all';
+
+function pageSns() {
+  const d = Store.load();
+  if (Api.token() && !chState.loaded && !chState.loading) {
+    setTimeout(() => hydrateChannels(false), 0);
+  }
+  const igConnected = !!(chState.ig && (chState.ig.connected || chState.ig.username || chState.ig.ig_user_id));
+  const igCfg = (d.store && d.store.instagram) || {};
+  const snsItems = d.items.filter(it => it.channel === '인스타그램');
+  const pendingCount = snsItems.filter(it => !it.handled).length;
+  const autoCount = snsItems.filter(it => it.handled === 'auto').length;
+  const filtered = snsItems.filter(it => {
+    if (snsFilter === 'pending') return !it.handled;
+    if (snsFilter === 'auto') return it.handled === 'auto' || it.handled === 'sent';
+    return true;
+  });
+
+  return `
+  <div class="sec">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:11px;margin-bottom:10px">
+        <div class="ico-box">📷</div>
+        <div style="flex:1;min-width:0">
+          <div class="row-t1"><span class="dot ${igConnected ? 'green' : 'gray'}"></span>인스타그램 댓글 방패</div>
+          <div class="row-t2">${igConnected
+            ? `@${esc(chState.ig.username || chState.ig.ig_user_id || '연결됨')} · 숨김 기준 ${igCfg.hide_heat_gte ?? 80}점`
+            : '비즈니스/크리에이터 계정을 연결하면 댓글 악성 감지·자동 숨김·답글이 동작합니다.'}</div>
+        </div>
+        <span class="chip ${igConnected ? 'green' : 'gray'}">${igConnected ? '연결됨' : '미연결'}</span>
+      </div>
+      ${igConnected ? `
+        <div class="btn-row">
+          <a class="btn sm ghost" href="${L.store}?s=instagram">자동 숨김 · 답글 설정</a>
+          <button type="button" class="btn sm ghost" id="igDisconnect" ${chState.busy.ig ? 'disabled' : ''}>연결 해제</button>
+        </div>
+      ` : `
+        <div class="btn-row" style="margin-bottom:8px">
+          <a class="btn sm" href="${esc(Api.instagramOAuthUrl())}">Instagram OAuth 연결</a>
+          <a class="btn sm ghost" href="${L.store}?s=instagram">자동 숨김 설정</a>
+        </div>
+        <div class="send-row">
+          <input class="input" id="igToken" type="password" placeholder="또는 Graph API Access Token 입력">
+          <button type="button" class="btn sm ghost" id="igSaveToken" ${chState.busy.ig ? 'disabled' : ''}>토큰 연결</button>
+        </div>
+      `}
+    </div>
+  </div>
+
+  <div class="sec"><div class="stats">
+    <div class="stat blue"><div class="stat-n">${snsItems.length}</div><div class="stat-l">SNS 댓글</div><div class="stat-d">수집된 전체 댓글</div></div>
+    <div class="stat gold"><div class="stat-n">${pendingCount}</div><div class="stat-l">확인 필요</div><div class="stat-d">위험 · 수동 응대</div></div>
+    <div class="stat green"><div class="stat-n">${autoCount}</div><div class="stat-l">AI 자동 처리</div><div class="stat-d">자동 숨김 · 답글</div></div>
+  </div></div>
+
+  <div class="sec">
+    <div class="sec-head">
+      <h2>인스타그램 댓글 내역</h2>
+      <div class="seg" style="width:auto;margin-left:auto">
+        <button type="button" data-sns-filter="all" aria-selected="${snsFilter === 'all'}">전체</button>
+        <button type="button" data-sns-filter="pending" aria-selected="${snsFilter === 'pending'}">확인 대기</button>
+        <button type="button" data-sns-filter="auto" aria-selected="${snsFilter === 'auto'}">처리 완료</button>
+      </div>
+    </div>
+    ${filtered.length ? `<div class="list">
+      ${filtered.map(it => `
+        <a class="row" href="${L.inquiries}?id=${encodeURIComponent(it.id)}">
+          <span class="dot ${!it.handled ? 'gold' : 'green'}"></span>
+          <span class="row-body">
+            <span class="row-t1">${who(it.customer)} · <span class="chip ${it.verdict === 'held' ? 'gold' : 'green'}">${it.handled === 'auto' ? 'AI 처리' : !it.handled ? '확인 대기' : '완료'}</span></span>
+            <span class="row-t2">${esc(Store.summary(it))} · 격앙 ${it.score ?? 0}점 · ${ago(it.ts)}</span>
+          </span>
+          <span class="chev">›</span>
+        </a>`).join('')}
+    </div>` : empty('📷', '수집된 SNS 댓글이 없습니다', '인스타그램 계정을 연결하면 댓글과 AI 숨김·답글 기록이 여기에 표시됩니다.')}
+  </div>`;
 }
 
 /* ============================================================
@@ -2347,7 +2533,7 @@ async function boot() {
     reveal();
   }
   if (key !== 'onboarding') {
-    pollAlertsOnce();
+    setTimeout(pollAlertsOnce, 3000);
     /* 새 문의·알림 확인 — 입력 중이면 화면을 다시 그리지 않는다 */
     setInterval(async () => {
       const sig = () => JSON.stringify(Store.load().items.map(i => [i.id, i.score, i.handled, i.updatedAt]));
@@ -2366,6 +2552,7 @@ async function boot() {
 const PAGES = {
   dashboard:   pageDashboard,
   inquiries:   pageInquiries,
+  sns:         pageSns,
   channels:    pageChannels,
   customers:   pageCustomers,
   customer:    pageCustomer,
@@ -2382,14 +2569,14 @@ const PAGES = {
 };
 
 const MENU_OF = {
-  dashboard:'dashboard', inquiries:'inquiries', channels:'channels',
+  dashboard:'dashboard', inquiries:'inquiries', sns:'sns', channels:'channels',
   customers:'customers', customer:'customers',
   settings:'settings', threshold:'settings', setchannels:'settings', tone:'settings', store:'settings', storehouse: 'storehouse',
   demo:'demo'
 };
 
 const PAGE_TITLES = {
-  dashboard: '현황', inquiries: '문의', channels: '채널',
+  dashboard: '현황', inquiries: '문의', sns: 'SNS', channels: '채널',
   customers: '고객', customer: '고객 상세', demo: '통화 시연',
   settings: '설정', threshold: '기준 설정', setchannels: '채널 연결',
   tone: '응답 톤', store: '매장 설정', storehouse: '매장 관리'
@@ -2400,6 +2587,7 @@ function pageKeyFromPath(pathname) {
   if (p.includes('auth/login')) return 'login';
   if (p.includes('onboarding')) return 'onboarding';
   if (p.includes('inquiries')) return 'inquiries';
+  if (p.includes('sns')) return 'sns';
   if (p.includes('settings/threshold')) return 'threshold';
   if (p.includes('settings/channels')) return 'setchannels';
   if (p.includes('settings/tone')) return 'tone';
@@ -2549,6 +2737,10 @@ document.addEventListener('click', async (e) => {
       if (navigateTo(navLink.href, true)) { e.preventDefault(); return; }
     }
   }
+  /* SNS 필터 전환 */
+  const sf = e.target.closest('[data-sns-filter]');
+  if (sf) { snsFilter = sf.dataset.snsFilter; render(); return; }
+
   /* 통화/채팅 탭 전환 */
   const tab = e.target.closest('[data-tab]');
   if (tab) { call.tab = tab.dataset.tab; render(); return; }
