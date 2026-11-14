@@ -7,3 +7,6 @@ services:
   mock-commerce:
     ports:
       - "${MOCK_COMMERCE_PORT:-8100}:8100"
+  web:
+    ports:
+      - "${WEB_PORT:-3000}:80"
