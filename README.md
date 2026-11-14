@@ -26,10 +26,11 @@ pnpm dev                            # http://localhost:8000
 - **서버 한 대 (docker compose, 추천):** API + Postgres를 같이 띄움. DB 포트는 외부에 열지 않음
   ```bash
   cp .env.example .env    # DB_OWNER_PASSWORD · APP_DB_PASSWORD(openssl rand -hex 24) · LLM_API_KEY · PUBLIC_BASE_URL 등
-  docker compose up -d --build
+  docker compose up -d --build       # docker-compose.override.yml이 함께 적용돼 API_PORT(기본 8000)로 열림
   docker compose logs -f api          # 업데이트: git pull && docker compose up -d --build
   ```
   HTTPS는 앞단(Caddy · Nginx · Cloudflare Tunnel 등)에서. 시작할 때 마이그레이션 → 시드(이미 있으면 건너뜀) → 서버
+- **Coolify:** Build Pack을 Docker Compose로, 환경변수에 `DB_OWNER_PASSWORD` · `APP_DB_PASSWORD` · `LLM_API_KEY` · `PUBLIC_BASE_URL` 등. `api` 서비스의 Domains에 `https://도메인:8000` (뒤의 `:8000`은 컨테이너 포트, 외부는 443). 호스트 포트를 열지 않아 서버의 다른 앱과 충돌하지 않음
 - **플랫폼 (Railway · Render · Fly.io 등):** `Dockerfile`로 서버만 올리고 DB는 플랫폼의 Postgres
 - **Docker 없이:** `pnpm install --prod` 후 `pnpm migrate && pnpm seed && pnpm start`
 - **필수 환경변수 (플랫폼 배포 시):** `DATABASE_URL`(앱 역할 app_user), `OWNER_DATABASE_URL`(마이그레이션용 소유자 역할), `APP_DB_PASSWORD`(app_user 비밀번호, DATABASE_URL과 같게), `LLM_API_KEY`, `PORT`, `WEB_ORIGIN`(프론트 주소, CORS), `PUBLIC_BASE_URL`(이 서버의 공개 https 주소, Vapi · 채널톡 · 푸시 링크용)

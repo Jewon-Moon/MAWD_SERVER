@@ -2,7 +2,9 @@
 #   1) cp .env.example .env  → DB_OWNER_PASSWORD · APP_DB_PASSWORD · LLM_API_KEY · PUBLIC_BASE_URL 등 채우기
 #   2) docker compose up -d --build   (시작할 때 마이그레이션 · 시드 후 서버)
 #   로그: docker compose logs -f api   ·   업데이트: git pull && docker compose up -d --build
-# DB는 외부에 포트를 열지 않음 (api 컨테이너만 접근). HTTPS는 앞단(Caddy · Nginx · Cloudflare 등)에서
+# 호스트 포트를 직접 열지 않음 → Coolify 같은 프록시가 도메인으로 api:8000에 연결 (서버의 다른 서비스와 포트 충돌 없음).
+# 프록시 없이 서버 한 대에서 직접 열려면 docker-compose.override.yml이 자동으로 함께 적용됨 (API_PORT, 기본 8000)
+# DB도 외부에 포트를 열지 않음 (api 컨테이너만 접근)
 name: mawd-prod
 
 services:
@@ -31,8 +33,8 @@ services:
       DATABASE_URL: postgres://app_user:${APP_DB_PASSWORD:?.env에 APP_DB_PASSWORD를 설정하세요}@db:5432/mawd
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
       PORT: "8000"
-    ports:
-      - "${API_PORT:-8000}:8000"
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
