@@ -289,7 +289,7 @@ export async function buildCallCard(sess: CallSession, deps: TurnDeps) {
     {
       role: 'system',
       content: [
-        `${sess.channel === 'call' ? '통화' : '채팅'} 기록을 사장님용 요약 카드로 정리합니다.` + ' 욕설 · 비하 · 감정 표현은 모두 빼고 중립적인 사실만 씁니다. title에는 "단순 문의", "부적절한 표현", "신고예고" 같은 모호한 표현 대신 고객의 구체적인 요구사항이나 불만 원인을 쓰세요.',
+        `${sess.channel === 'call' ? '통화' : '채팅'} 기록을 사장님용 요약 카드로 정리합니다.` + ' 욕설 · 비하 · 감정 표현 · 신고/고소/소송 등 위협 표현은 모두 빼고 중립적인 업무 사실만 씁니다. title에는 "단순 문의", "부적절한 표현", "신고예고" 같은 모호하거나 공격적인 표현 대신 고객의 구체적인 요구사항이나 불만 원인을 쓰세요.',
         'demands: 고객 요구사항. facts: 사실관계. [주문 데이터]로 확인된 사실만 source=order_data (판매처가 있으면 [쿠팡]처럼 판매처 이름 포함), 고객 말은 source=customer_claim.',
         'recommendations: 사장님이 바로 보낼 수 있는 대응안 2개 이상 (draft는 고객에게 보낼 정중한 문장, 정책 근거가 없으면 policy_ref=null).',
         'heat_label: 보통 / 높음 / 매우 높음 중 하나.',

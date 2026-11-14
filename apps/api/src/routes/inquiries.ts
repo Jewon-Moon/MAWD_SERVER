@@ -53,7 +53,7 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
         const masked = hasAbuse && (!card || r.channel === 'sns');
         const extracted = masked ? extractIntentSummary(previewRaw, category) : null;
         const cardIntent = card ? [card.title, ...(card.demands ?? [])].filter(Boolean).join(' · ') : '';
-        const isVague = (s?: string | null) => !s || /^(단순\s*문의|부적절한\s*표현.*|신고\s*예고)$/.test(s.trim());
+        const isVague = (s?: string | null) => !s || /^(단순\s*문의|부적절한\s*표현.*|신고\s*예고)$/.test(s.trim()) || /(신고\s*예고|분쟁·신고|신고\s*언급)/.test(s);
         const preview = masked
           ? (cardIntent || (!isVague(raw.intent_summary) ? raw.intent_summary! : extracted!.summary))
           : previewRaw;

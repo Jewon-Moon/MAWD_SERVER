@@ -165,11 +165,11 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
       try {
         let out = '';
         for await (const d of deps.llm.stream([
-          { role: 'system', content: '고객 댓글에서 욕설·비속어·감정적 비난은 완전히 제거하고, 고객이 실제로 원하거나 불만을 제기한 핵심 의도만 중립적인 한국어 한 문장(40자 이내, 예: "배송 지연으로 인한 환불 요청")으로 요약하세요. "단순 문의", "부적절한 표현", "신고예고", "신고 예고" 같은 단편적·모호한 말은 금지하고 구체적인 사유(배송/환불/품질/응대 등)를 적으세요.' },
+          { role: 'system', content: '고객 댓글에서 욕설·비속어·감정적 비난·신고/고소/소송 등 위협성 표현은 완전히 제거하고, 그 뒤에 있는 실제 문의·불만 사유(배송/환불/교환/품질/응대 등)만 중립적인 한국어 한 문장(40자 이내, 예: "배송 지연으로 인한 환불 요청")으로 요약하세요. "단순 문의", "부적절한 표현", "신고", "고소", "소송", "분쟁" 같은 단편적·위협 관련 표현은 요약에 넣지 마세요.' },
           { role: 'user', content: c.text },
         ], { tier: 'fast', maxTokens: 80 })) out += d;
         const clean = out.trim().replace(/\n+/g, ' ');
-        if (clean.length >= 4 && !clean.includes(HANDOFF) && !clean.includes('단순 문의') && !clean.includes('부적절한 표현') && !clean.includes('신고예고') && !clean.includes('신고 예고') && !prefilter(clean, cfg, 'sns').abusive) {
+        if (clean.length >= 4 && !clean.includes(HANDOFF) && !clean.includes('단순 문의') && !clean.includes('부적절한 표현') && !/(신고|고소|소송|분쟁|협박)/.test(clean) && !prefilter(clean, cfg, 'sns').abusive) {
           intentTitle = clean.slice(0, 40);
           intentSummary = `고객 의도: ${clean.slice(0, 120)}`;
         }
