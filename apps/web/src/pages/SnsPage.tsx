@@ -25,7 +25,8 @@ function handledBadge(it: InquiryItem): { label: string; tone: 'green' | 'blue' 
 
 export const SnsPage: React.FC = () => {
   const { data, setHandled, pullServer, showToast } = useApp();
-  const [filter, setFilter] = useState<SnsFilter>('all');
+  const [filter, setFilter] = useState<SnsFilter>('held');
+  const [revealedHiddenIds, setRevealedHiddenIds] = useState<Record<string, boolean>>({});
   const [igConn, setIgConn] = useState<InstagramConnection | null>(null);
   const [igLoading, setIgLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -66,23 +67,25 @@ export const SnsPage: React.FC = () => {
   );
 
   const counts = useMemo(() => {
-    const hidden = snsItems.filter((it) => it.snsAction === 'hidden').length;
-    const held = snsItems.filter((it) => !it.handled && it.snsAction !== 'hidden').length;
-    const auto = snsItems.filter((it) => it.handled === 'auto' && it.snsAction !== 'hidden').length;
-    return { all: snsItems.length, held, hidden, auto };
+    const visible = snsItems.filter((it) => it.snsAction !== 'hidden');
+    const hidden = snsItems.length - visible.length;
+    const held = visible.filter((it) => !it.handled).length;
+    const auto = visible.filter((it) => it.handled === 'auto').length;
+    return { all: visible.length, held, hidden, auto };
   }, [snsItems]);
 
   const filteredItems = useMemo(() => {
     if (filter === 'hidden') {
       return snsItems.filter((it) => it.snsAction === 'hidden');
     }
+    const visible = snsItems.filter((it) => it.snsAction !== 'hidden');
     if (filter === 'held') {
-      return snsItems.filter((it) => !it.handled && it.snsAction !== 'hidden');
+      return visible.filter((it) => !it.handled);
     }
     if (filter === 'auto') {
-      return snsItems.filter((it) => it.handled === 'auto' && it.snsAction !== 'hidden');
+      return visible.filter((it) => it.handled === 'auto');
     }
-    return snsItems;
+    return visible;
   }, [snsItems, filter]);
 
   const handleConnectToken = async (e: React.FormEvent) => {
@@ -317,20 +320,20 @@ export const SnsPage: React.FC = () => {
             <button
               type="button"
               role="tab"
-              aria-selected={filter === 'all'}
-              className={`seg-btn ${filter === 'all' ? 'is-active' : ''}`}
-              onClick={() => setFilter('all')}
-            >
-              전체 ({counts.all})
-            </button>
-            <button
-              type="button"
-              role="tab"
               aria-selected={filter === 'held'}
               className={`seg-btn ${filter === 'held' ? 'is-active' : ''}`}
               onClick={() => setFilter('held')}
             >
               보류 ({counts.held})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={filter === 'auto'}
+              className={`seg-btn ${filter === 'auto' ? 'is-active' : ''}`}
+              onClick={() => setFilter('auto')}
+            >
+              자동 응대 ({counts.auto})
             </button>
             <button
               type="button"
@@ -344,11 +347,11 @@ export const SnsPage: React.FC = () => {
             <button
               type="button"
               role="tab"
-              aria-selected={filter === 'auto'}
-              className={`seg-btn ${filter === 'auto' ? 'is-active' : ''}`}
-              onClick={() => setFilter('auto')}
+              aria-selected={filter === 'all'}
+              className={`seg-btn ${filter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setFilter('all')}
             >
-              자동 응대 ({counts.auto})
+              전체 ({counts.all})
             </button>
           </div>
         </div>
@@ -384,9 +387,22 @@ export const SnsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className={`quote ${tone === 'red' ? 'red' : tone === 'gold' ? 'gold' : ''}`}>
-                  {it.text}
-                </div>
+                {it.snsAction === 'hidden' && !revealedHiddenIds[it.id] ? (
+                  <div className="quote red" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <span>부적절한 표현으로 AI가 숨김 처리한 댓글입니다.</span>
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      onClick={() => setRevealedHiddenIds((prev) => ({ ...prev, [it.id]: true }))}
+                    >
+                      원문 보기
+                    </button>
+                  </div>
+                ) : (
+                  <div className={`quote ${tone === 'red' ? 'red' : tone === 'gold' ? 'gold' : ''}`}>
+                    {it.text}
+                  </div>
+                )}
 
                 {it.hits.length > 0 && (
                   <div className="btn-row" style={{ marginTop: 10, gap: 6 }}>
