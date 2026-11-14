@@ -205,6 +205,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           integrations: me.integrations || prev.integrations,
         };
       });
+      setIsAuthed(true);
     },
     [updateData]
   );

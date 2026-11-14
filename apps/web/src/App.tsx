@@ -45,7 +45,10 @@ const AppRoutes: React.FC = () => {
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthed ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route
+        path="/login"
+        element={isAuthed ? <Navigate to={data.settings.onboarded ? '/' : '/onboarding'} replace /> : <LoginPage />}
+      />
       <Route path="/onboarding" element={<RequireAuthOnly><OnboardingPage /></RequireAuthOnly>} />
 
       <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
