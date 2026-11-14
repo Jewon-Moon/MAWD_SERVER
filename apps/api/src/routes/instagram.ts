@@ -5,15 +5,29 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { createDb } from '../db/client.js';
 import { ApiError } from '../errors.js';
-import { parseCommentWebhook, verifyMetaSignature } from '../integrations/instagram.js';
+import { randomBytes } from 'node:crypto';
+import { exchangeUnifiedCode, parseCommentWebhook, unifiedLoginUrl, verifyMetaSignature } from '../integrations/instagram.js';
 import { TENANT_ID } from '../mocks/data.js';
 import type { InstagramService } from '../sns/instagram.js';
 
 type Db = ReturnType<typeof createDb>;
 const Status = z.object({ connected: z.boolean(), ig_user_id: z.string().nullable(), username: z.string().nullable(), connected_at: z.string().nullable() });
 
-export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env?: NodeJS.ProcessEnv }): FastifyPluginAsyncZod {
+const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+const page = (title: string, msg: string) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<body style="font-family:-apple-system,system-ui,sans-serif;display:grid;place-items:center;min-height:90vh;margin:0;background:#f4f5f7">
+<div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:28px;max-width:420px;text-align:center"><h1 style="font-size:20px;margin:0 0 8px">${esc(title)}</h1><p style="color:#4b5563;line-height:1.6">${esc(msg)}</p><a href="/console" style="color:#3b5bfd">콘솔로 돌아가기</a></div>`;
+
+export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env?: NodeJS.ProcessEnv; fetchFn?: typeof fetch }): FastifyPluginAsyncZod {
   const env = deps.env ?? process.env;
+  // 통합 로그인 OAuth: 로그인 시작 때 만든 state → 매장 (CSRF 방지, 10분 · 한 번만)
+  // shortcut: 프로세스 메모리 (서버 1대 기준). 여러 대면 Redis
+  const states = new Map<string, { tenantId: string; at: number }>();
+  const oauthConf = () => {
+    const appId = env.INSTAGRAM_APP_ID?.trim(), configId = env.INSTAGRAM_CONFIG_ID?.trim(), appSecret = env.INSTAGRAM_APP_SECRET?.trim(), base = env.PUBLIC_BASE_URL?.trim();
+    if (!appId || !configId || !appSecret || !base) throw new ApiError(503, 'instagram_oauth_not_configured', 'INSTAGRAM_APP_ID · INSTAGRAM_CONFIG_ID · INSTAGRAM_APP_SECRET · PUBLIC_BASE_URL이 필요합니다.');
+    return { appId, configId, appSecret, redirectUri: `${base.replace(/\/$/, '')}/v1/instagram/oauth/callback` };
+  };
   // shortcut: 인증 전이라 데모 매장 고정, Better Auth 붙일 때 세션의 매장으로 교체
   const tenantOf = () => TENANT_ID;
 
@@ -47,6 +61,34 @@ export function instagramRoutes(deps: { db: Db; instagram: InstagramService; env
         })().catch((err) => req.log.error({ err, comment: c.commentId }, 'instagram comment failed'));
       }
       return { ok: true as const };
+    });
+
+    // ---- 통합 로그인 (사장님이 "인스타 연결" 버튼 → Meta 로그인 → 콜백) ----
+    app.get('/instagram/oauth/start', { schema: { tags: ['instagram'], description: 'Meta 로그인 화면으로 이동 (302). 프론트는 이 주소로 이동만 하면 됨' } }, async (_req, reply) => {
+      const c = oauthConf();
+      const state = randomBytes(18).toString('base64url');
+      for (const [k, v] of states) if (Date.now() - v.at > 10 * 60_000) states.delete(k);
+      states.set(state, { tenantId: tenantOf(), at: Date.now() });
+      return reply.redirect(unifiedLoginUrl({ appId: c.appId, configId: c.configId, redirectUri: c.redirectUri, state }));
+    });
+
+    app.get('/instagram/oauth/callback', {
+      schema: { tags: ['instagram'], querystring: z.looseObject({ code: z.string().optional(), state: z.string().optional(), error: z.string().optional(), error_description: z.string().optional() }), description: 'Meta가 로그인 후 보내는 곳 (리디렉션 URL로 등록). code → 토큰 → 인스타 계정 연결 · 웹훅 구독 → 결과 화면' },
+    }, async (req, reply) => {
+      const html = (code: number, title: string, msg: string) => reply.code(code).type('text/html; charset=utf-8').send(page(title, msg));
+      if (req.query.error) return html(400, '연결을 취소했어요', req.query.error_description ?? '인스타그램 연결이 완료되지 않았어요. 다시 시도해 주세요.');
+      const st = req.query.state ? states.get(req.query.state) : undefined;
+      if (req.query.state) states.delete(req.query.state);
+      if (!st || Date.now() - st.at > 10 * 60_000 || !req.query.code) return html(400, '연결을 확인하지 못했어요', '요청이 만료됐거나 올바르지 않아요. 콘솔에서 다시 연결해 주세요.');
+      try {
+        const c = oauthConf();
+        const token = await exchangeUnifiedCode(deps.fetchFn ?? fetch, { appId: c.appId, appSecret: c.appSecret, redirectUri: c.redirectUri, code: req.query.code });
+        const s = await deps.instagram.connectUnified(st.tenantId, token);
+        return html(200, '인스타그램을 연결했어요', `@${s.username ?? s.ig_user_id} 계정의 댓글을 이제 AI가 처리해요.`);
+      } catch (err) {
+        req.log.error({ err }, 'instagram oauth callback failed');
+        return html(400, '연결하지 못했어요', err instanceof Error ? err.message : '알 수 없는 오류');
+      }
     });
 
     // ---- 매장 연결 (사장님 화면) ----

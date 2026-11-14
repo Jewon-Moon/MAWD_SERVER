@@ -23,26 +23,43 @@ type Log = { error: (o: object, m: string) => void };
 export type CommentResult = { action: 'hidden' | 'replied' | 'none' | 'skipped'; heat: number | null; reply: string | null };
 const HANDOFF = '[HANDOFF]';
 
-export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramClient; secrets: SecretBox; bivia?: Bivia; rag?: Rag; alerts?: AlertCenter; log?: Log }) {
-  async function tokenOf(tenantId: string): Promise<string> {
+export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramClient; igFb: InstagramClient; secrets: SecretBox; bivia?: Bivia; rag?: Rag; alerts?: AlertCenter; log?: Log }) {
+  /** 저장된 토큰 + 그 토큰으로 부를 API (통합 로그인 = graph.facebook.com, 직접 붙여넣은 토큰 = graph.instagram.com) */
+  async function credOf(tenantId: string): Promise<{ token: string; client: InstagramClient }> {
     const [sec] = await deps.db.withTenant(tenantId, (tx) => tx.select({ c: s.secrets.ciphertext }).from(s.secrets).where(eq(s.secrets.kind, 'instagram')), { readOnly: true });
     if (!sec) throw new Error('인스타그램이 연결되어 있지 않습니다.');
-    return deps.secrets.open<{ access_token: string }>(sec.c).access_token;
+    const c = deps.secrets.open<{ access_token: string; api?: 'facebook' | 'instagram' }>(sec.c);
+    return { token: c.access_token, client: c.api === 'facebook' ? deps.igFb : deps.ig };
+  }
+
+  async function save(tenantId: string, igUserId: string, username: string | null, cred: { access_token: string; api: 'facebook' | 'instagram' }) {
+    const owner = await deps.db.tenantForInstagram(igUserId);
+    if (owner && owner !== tenantId) throw new ApiError(409, 'instagram_already_connected', '이 인스타그램 계정은 다른 매장에 연결되어 있어요.');
+    const sealed = deps.secrets.seal(cred);
+    await deps.db.withTenant(tenantId, async (tx) => {
+      await tx.insert(s.instagramAccounts).values({ tenantId, igUserId, username })
+        .onConflictDoUpdate({ target: s.instagramAccounts.tenantId, set: { igUserId, username, connectedAt: new Date() } });
+      await tx.insert(s.secrets).values({ tenantId, kind: 'instagram', ciphertext: sealed })
+        .onConflictDoUpdate({ target: [s.secrets.tenantId, s.secrets.kind], set: { ciphertext: sealed } });
+    });
+    return status(tenantId);
+  }
+
+  /** 통합 로그인 콜백에서 받은 토큰으로 연결: 할당된 인스타 계정 찾기 → 웹훅 구독 → 저장 */
+  async function connectUnified(tenantId: string, accessToken: string) {
+    const accounts = await deps.igFb.assignedAccounts(accessToken);
+    // shortcut: 할당된 계정이 여러 개면 첫 번째만. 여러 계정을 쓰는 매장이 생기면 고르는 화면
+    const a = accounts[0];
+    if (!a) throw new ApiError(400, 'instagram_no_account', '연결된 인스타그램 계정을 찾지 못했어요. 로그인할 때 인스타 계정을 선택했는지 확인해 주세요.');
+    // 구독 실패해도 연결은 저장 (대시보드에서 수동 구독 가능). 실패 사유는 로그로
+    await deps.igFb.subscribe(a.id, accessToken).catch((err) => deps.log?.error({ err, ig: a.id }, 'instagram webhook subscribe failed'));
+    return save(tenantId, a.id, a.username ?? null, { access_token: accessToken, api: 'facebook' });
   }
 
   /** 토큰으로 계정을 확인하고 매장에 연결 (토큰은 암호화 저장). 다른 매장이 이미 연결한 계정이면 409 */
   async function connect(tenantId: string, accessToken: string) {
     const me = await deps.ig.me(accessToken).catch((e: Error) => { throw new ApiError(400, 'instagram_token_invalid', `토큰을 확인하지 못했어요: ${e.message}`); });
-    const owner = await deps.db.tenantForInstagram(me.user_id);
-    if (owner && owner !== tenantId) throw new ApiError(409, 'instagram_already_connected', '이 인스타그램 계정은 다른 매장에 연결되어 있어요.');
-    const sealed = deps.secrets.seal({ access_token: accessToken });
-    await deps.db.withTenant(tenantId, async (tx) => {
-      await tx.insert(s.instagramAccounts).values({ tenantId, igUserId: me.user_id, username: me.username ?? null })
-        .onConflictDoUpdate({ target: s.instagramAccounts.tenantId, set: { igUserId: me.user_id, username: me.username ?? null, connectedAt: new Date() } });
-      await tx.insert(s.secrets).values({ tenantId, kind: 'instagram', ciphertext: sealed })
-        .onConflictDoUpdate({ target: [s.secrets.tenantId, s.secrets.kind], set: { ciphertext: sealed } });
-    });
-    return status(tenantId);
+    return save(tenantId, me.user_id, me.username ?? null, { access_token: accessToken, api: 'instagram' });
   }
 
   async function status(tenantId: string) {
@@ -94,11 +111,11 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     let action: CommentResult['action'] = 'none';
     let reply: string | null = null;
     try {
-      const token = await tokenOf(tenantId);
-      if (shouldHide) { await deps.ig.hide(c.commentId, token); action = 'hidden'; }
+      const { token, client } = await credOf(tenantId);
+      if (shouldHide) { await client.hide(c.commentId, token); action = 'hidden'; }
       else if (ig.auto_reply && !j.needsOwner && !j.abusive && heat < cfg.settings.response.heat_threshold && !c.parentId) {
         reply = await draftReply(tenantId, cfg, c);
-        if (reply) { await deps.ig.reply(c.commentId, reply, token); action = 'replied'; }
+        if (reply) { await client.reply(c.commentId, reply, token); action = 'replied'; }
       }
     } catch (err) { deps.log?.error({ err, comment: c.commentId }, 'instagram action failed'); }
 
@@ -126,6 +143,6 @@ export function createInstagramService(deps: { db: Db; llm: Llm; ig: InstagramCl
     return { action, heat, reply };
   }
 
-  return { connect, status, disconnect, handleComment };
+  return { connect, connectUnified, status, disconnect, handleComment };
 }
 export type InstagramService = ReturnType<typeof createInstagramService>;

@@ -26,13 +26,13 @@ import { createEmbedder, createRag, type Embedder } from './knowledge/rag.js';
 import { createTracker, type Tracker } from './integrations/tracker.js';
 import { documentRoutes } from './routes/documents.js';
 import { createSecretBox, type SecretBox } from './secrets.js';
-import { createInstagramClient, type InstagramClient } from './integrations/instagram.js';
+import { createInstagramClient, FB_GRAPH, type InstagramClient } from './integrations/instagram.js';
 import { createInstagramService } from './sns/instagram.js';
 import { instagramRoutes } from './routes/instagram.js';
 import { createCommerceService } from './commerce/service.js';
 import { commerceRoutes } from './routes/commerce.js';
 
-export async function buildApp(opts: { logger?: boolean; db?: ReturnType<typeof createDb>; llm?: Llm; tts?: Tts; sender?: ChatSender; vapi?: VapiClient; alerts?: AlertCenter; push?: PushSender; bivia?: Bivia; embedder?: Embedder; tracker?: Tracker; secrets?: SecretBox; fetchFn?: typeof fetch; syncIntervalMs?: number; instagram?: InstagramClient } = {}) {
+export async function buildApp(opts: { logger?: boolean; db?: ReturnType<typeof createDb>; llm?: Llm; tts?: Tts; sender?: ChatSender; vapi?: VapiClient; alerts?: AlertCenter; push?: PushSender; bivia?: Bivia; embedder?: Embedder; tracker?: Tracker; secrets?: SecretBox; fetchFn?: typeof fetch; syncIntervalMs?: number; instagram?: InstagramClient; instagramFb?: InstagramClient } = {}) {
   const app = Fastify({ logger: opts.logger ?? false }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -85,8 +85,8 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   await app.register(contextRoutes({ context }), { prefix: '/v1' });
   await app.register(documentRoutes({ db }), { prefix: '/v1' });
   await app.register(commerceRoutes({ commerce }), { prefix: '/v1' });
-  const instagram = createInstagramService({ db, llm, ig: opts.instagram ?? createInstagramClient(opts.fetchFn), secrets, bivia, rag, alerts, log: app.log });
-  await app.register(instagramRoutes({ db, instagram }), { prefix: '/v1' });
+  const instagram = createInstagramService({ db, llm, ig: opts.instagram ?? createInstagramClient(opts.fetchFn), igFb: opts.instagramFb ?? createInstagramClient(opts.fetchFn, FB_GRAPH), secrets, bivia, rag, alerts, log: app.log });
+  await app.register(instagramRoutes({ db, instagram, fetchFn: opts.fetchFn }), { prefix: '/v1' });
   await app.register(callRoutes({ db, llm, alerts, bivia, rag, tracker, commerce, tts: opts.tts ?? createTts() }), { prefix: '/v1' });
   const chat = createChatService({ db, llm, sender: opts.sender ?? createChannelTalkSender(process.env, (m) => app.log.info(m)), log: app.log, alerts, bivia, rag, tracker, commerce });
   await app.register(channelTalkRoutes({ db, chat }), { prefix: '/v1' });
