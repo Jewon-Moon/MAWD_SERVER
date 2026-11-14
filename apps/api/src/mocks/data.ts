@@ -1,6 +1,6 @@
 // 목 데이터 (§14.4): 프론트가 실제 구현 전에 화면을 만들 수 있게 고정 응답을 제공합니다.
 // 실제 구현으로 바꿀 때 응답 모양은 유지합니다.
-import type { AllSettings, InquiryDetail, InquiryListItem, Me } from '@mawd/contracts';
+import type { AllSettings, Me } from '@mawd/contracts';
 import type { z } from 'zod';
 import type * as C from '@mawd/contracts';
 
@@ -127,56 +127,6 @@ export const defaultTemplates: Row<typeof C.Template>[] = [
 export const defaultFaqs: Row<typeof C.Faq>[] = [
   { id: 'ffffffff-0000-4000-8000-000000000001', question: '영업시간이 어떻게 되나요?', answer: '평일 10시~19시입니다. 주말과 공휴일은 휴무입니다.', enabled: true },
 ];
-
-export const inquiries: InquiryListItem[] = [
-  {
-    id: 'aaaaaaaa-0000-4000-8000-000000000001',
-    channel: 'chat', status: 'pending', route: 'B',
-    title: '주문 #1234 배송 지연 환불 요청', customer_name: '김고객',
-    category: '환불·교환', heat_label: '매우 높음', created_at: now, updated_at: now,
-  },
-  {
-    id: 'aaaaaaaa-0000-4000-8000-000000000002',
-    channel: 'call', status: 'pending', route: 'C',
-    title: '불량품 교환 및 법적 조치 언급', customer_name: '이고객',
-    category: '오류·장애', heat_label: '높음', created_at: now, updated_at: now,
-  },
-  {
-    id: 'aaaaaaaa-0000-4000-8000-000000000003',
-    channel: 'chat', status: 'auto_done', route: 'A',
-    title: '영업시간 문의', customer_name: '박고객',
-    category: '사용법', heat_label: '보통', created_at: now, updated_at: now,
-  },
-];
-
-export const inquiryDetail = (id: string): InquiryDetail | undefined => {
-  const base = inquiries.find((i) => i.id === id);
-  if (!base) return undefined;
-  return {
-    ...base,
-    ai_muted: false,
-    analysis: { heat: 82, needs_owner: true, confidence: 0.91 },
-    card: {
-      title: base.title,
-      demands: ['전액 환불', '오늘 중 답변'],
-      facts: [
-        { text: '11/8 주문, 11/10 도착 예정', source: 'order_data' },
-        { text: '아직 도착하지 않음', source: 'customer_claim' },
-        { text: '3회 문의', source: 'customer_claim' },
-      ],
-      recommendations: [
-        { label: '전액 환불 + 사과', draft: '고객님, 배송이 늦어져 불편을 드려 죄송합니다. ...', policy_ref: '환불정책 3조' },
-        { label: '배송 추적 후 쿠폰 제공', draft: '고객님, 현재 배송 위치를 확인해 보니 ...', policy_ref: null },
-      ],
-      heat_label: base.heat_label,
-      risk_flags: ['환불 요구', '반복 문의'],
-    },
-    messages: [
-      { id: 'bbbbbbbb-0000-4000-8000-000000000001', sender: 'customer', text: '●●● 언제 오는 거예요? 당장 환불해요', created_at: now },
-      { id: 'bbbbbbbb-0000-4000-8000-000000000002', sender: 'ai', text: 'AI 상담 도우미입니다. 많이 기다리셨죠. 담당자가 확인 후 1시간 안에 안내드리겠습니다.', created_at: now },
-    ],
-  };
-};
 
 /** 매장 문서(MD) 기본값: 템플릿 모드 입력값. 저장한 적 없는 매장은 이 값으로 MD를 만들어 씀 (데모 상점 기준) */
 export const defaultContextFields = {

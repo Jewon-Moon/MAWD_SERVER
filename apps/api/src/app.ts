@@ -12,6 +12,7 @@ import { TENANT_ID } from './mocks/data.js';
 import { loadConfig } from './tenantConfig.js';
 import { settingsRoutes } from './routes/settings.js';
 import { callRoutes } from './routes/calls.js';
+import { inquiryRoutes } from './routes/inquiries.js';
 import { createDb } from './db/client.js';
 import { createLlm, type Llm } from './integrations/llm.js';
 import { createTts, type Tts } from './integrations/tts.js';
@@ -42,7 +43,7 @@ export async function buildApp(opts: { logger?: boolean; db?: ReturnType<typeof 
   app.setSerializerCompiler(serializerCompiler);
   registerErrorHandler(app);
 
-  await app.register(cors, { origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000', credentials: true });
+  await app.register(cors, { origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((o) => o.trim()).filter(Boolean), credentials: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] });
   await app.register(swagger, {
     openapi: { info: { title: '감정 방패 API', version: '0.1.0' }, servers: [{ url: '/' }] },
     transform: jsonSchemaTransform,
@@ -85,6 +86,7 @@ firebase.messaging(); // notification 페이로드는 SDK가 알아서 표시, �
   const context = createContextStore(db);
   await app.register(accountRoutes({ db, auth, context }), { prefix: '/v1' });
   await app.register(mockRoutes, { prefix: '/v1' });
+  await app.register(inquiryRoutes({ db }), { prefix: '/v1' });
   await app.register(settingsRoutes({ db }), { prefix: '/v1' });
   const llm = opts.llm ?? createLlm();
   const bivia = opts.bivia ?? createBivia();

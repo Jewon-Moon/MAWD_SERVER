@@ -71,6 +71,8 @@ export const InquiryListItem = z.object({
   customer_name: z.string().nullable(),
   category: CategoryName,
   heat_label: HeatLabel,
+  heat: z.number().int().min(0).max(100).nullable().describe('최신 감정 점수 (분석 전이면 null)'),
+  preview: z.string().describe('고객이 한 말 (앞 500자)'),
   created_at: isoTime,
   updated_at: isoTime,
 });

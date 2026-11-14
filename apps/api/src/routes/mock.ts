@@ -22,28 +22,7 @@ export const mockRoutes: FastifyPluginAsyncZod = async (app) => {
     async () => ({ ok: true }));
   // 세부 설정은 routes/settings.ts
 
-  // dashboard / inquiries
-  app.get('/dashboard/summary', { schema: { tags: ['inquiries'], response: { 200: C.DashboardSummary } } },
-    async () => ({ today_total: 27, auto_handled_rate: 0.63, shielded_heated_count: 5, pending_count: 2 }));
-  app.get('/inquiries', { schema: { tags: ['inquiries'], querystring: C.InquiryListQuery, response: { 200: C.Page(C.InquiryListItem) } } },
-    async (req) => {
-      const { status, channel, limit } = req.query;
-      const items = M.inquiries.filter((i) => (!status || i.status === status) && (!channel || i.channel === channel));
-      return { items: items.slice(0, limit), next_cursor: null };
-    });
-  app.get('/inquiries/:id', { schema: { tags: ['inquiries'], params: idParam, response: { 200: C.InquiryDetail } } },
-    async (req) => M.inquiryDetail(req.params.id) ?? notFound('inquiry_not_found'));
-  app.get('/inquiries/:id/messages', { schema: { tags: ['inquiries'], params: idParam, querystring: C.RawMessagesQuery, response: { 200: z.array(C.Message) } } },
-    async (req) => {
-      const d = M.inquiryDetail(req.params.id) ?? notFound('inquiry_not_found');
-      return req.query.raw ? d.messages.map((m) => ({ ...m, text: m.text.replace('●●●', '(원문 욕설)') })) : d.messages;
-    });
-  app.post('/inquiries/:id/actions', { schema: { tags: ['inquiries'], params: idParam, body: C.InquiryAction, response: { 200: C.InquiryDetail } } },
-    async (req) => {
-      const d = M.inquiryDetail(req.params.id) ?? notFound('inquiry_not_found');
-      const status: InquiryDetail['status'] = req.body.type === 'hold' ? 'pending' : req.body.type === 'manual' ? 'manual' : 'done';
-      return { ...d, status, ai_muted: req.body.type === 'manual' || d.ai_muted };
-    });
+  // dashboard / inquiries 는 routes/inquiries.ts (실제 구현)
 
   // documents / orders 는 routes/documents.ts · routes/commerce.ts (실제 구현)
 
