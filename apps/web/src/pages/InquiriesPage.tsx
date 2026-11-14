@@ -112,7 +112,8 @@ export const InquiriesPage: React.FC = () => {
             const summaryText = it.card?.summary || summarizeItem(it);
             const demands = it.card?.demands || [];
             const facts = it.card?.facts;
-            const draftValue = it.draft || it.card?.recommendations?.[0]?.draft || '';
+            const recommendations = it.card?.recommendations || [];
+            const draftValue = it.draft || recommendations[0]?.draft || '';
             const isRawOpen = Boolean(openRaw[it.id]);
             const msgs = rawMessages[it.id] || [];
 
@@ -200,9 +201,29 @@ export const InquiriesPage: React.FC = () => {
                 </div>
 
                 <div className="field" style={{ marginTop: 14, marginBottom: 12 }}>
-                  <label className="label" htmlFor={`draft-${it.id}`}>
-                    사장님 답변 초안
-                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                    <label className="label" htmlFor={`draft-${it.id}`} style={{ marginBottom: 0 }}>
+                      사장님 답변 초안
+                    </label>
+                    {recommendations.length > 1 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {recommendations.map((rec, idx) => {
+                          const active = draftValue.trim() === rec.draft.trim();
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              className={`rec-tab ${active ? 'is-active' : ''}`}
+                              style={{ padding: '4px 10px', fontSize: 12 }}
+                              onClick={() => setDraft(it.id, rec.draft)}
+                            >
+                              {rec.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   <textarea
                     id={`draft-${it.id}`}
                     className="textarea"

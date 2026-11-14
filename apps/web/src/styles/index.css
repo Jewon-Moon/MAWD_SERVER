@@ -705,12 +705,43 @@ button.row:hover {
   line-height: 1.6;
 }
 
-.rec-card {
+.rec-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.rec-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  transition: all 0.15s ease;
+}
+
+.rec-tab:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.rec-tab.is-active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.rec-panel {
   background: var(--panel);
   border: 1px solid var(--line-2);
   border-radius: var(--r-m);
-  padding: 14px 16px;
-  margin-top: 10px;
+  padding: 16px 18px;
 }
 
 .rec-head {
@@ -718,13 +749,15 @@ button.row:hover {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-3);
 }
 
 .rec-draft {
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--ink-2);
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--ink);
   white-space: pre-wrap;
 }
 

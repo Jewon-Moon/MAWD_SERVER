@@ -19,6 +19,7 @@ export const InquiryDetailPage: React.FC = () => {
   const [showRaw, setShowRaw] = useState(false);
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [loadingRaw, setLoadingRaw] = useState(false);
+  const [recIdx, setRecIdx] = useState(0);
 
   const item = useMemo(() => {
     if (!id) return undefined;
@@ -172,29 +173,55 @@ export const InquiryDetailPage: React.FC = () => {
             </div>
           )}
 
-          {recommendations.length > 0 && (
-            <div className="detail-block">
-              <div className="detail-block-title">AI 추천 답변</div>
-              {recommendations.map((rec, idx) => (
-                <div key={idx} className="rec-card">
+          {recommendations.length > 0 && (() => {
+            const activeIdx = Math.min(recIdx, recommendations.length - 1);
+            const activeRec = recommendations[activeIdx];
+            const isApplied = draftValue.trim() === activeRec.draft.trim();
+            return (
+              <div className="detail-block">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div className="detail-block-title" style={{ marginBottom: 0 }}>AI 추천 대응안</div>
+                  {recommendations.length > 1 && (
+                    <span className="chip gray">{recommendations.length}개 옵션</span>
+                  )}
+                </div>
+
+                {recommendations.length > 1 && (
+                  <div className="rec-tabs" role="tablist" aria-label="AI 추천 대응안 선택">
+                    {recommendations.map((rec, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        role="tab"
+                        aria-selected={idx === activeIdx}
+                        className={`rec-tab ${idx === activeIdx ? 'is-active' : ''}`}
+                        onClick={() => setRecIdx(idx)}
+                      >
+                        {rec.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="rec-panel">
                   <div className="rec-head">
-                    <strong style={{ fontSize: 13.5 }}>{rec.label}</strong>
+                    <strong style={{ fontSize: 13.5 }}>{activeRec.label}</strong>
                     <button
                       type="button"
-                      className="btn ghost sm"
+                      className={`btn sm ${isApplied ? 'ghost' : ''}`}
                       onClick={() => {
-                        setDraft(item.id, rec.draft);
-                        showToast('추천 답변을 불러왔습니다');
+                        setDraft(item.id, activeRec.draft);
+                        showToast('추천 답변을 적용했습니다');
                       }}
                     >
-                      이 답변 불러오기
+                      {isApplied ? '✓ 현재 답변에 적용됨' : '이 답변 적용'}
                     </button>
                   </div>
-                  <div className="rec-draft">{rec.draft}</div>
+                  <div className="rec-draft">{activeRec.draft}</div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           <div style={{ marginTop: 16 }}>
             <button type="button" className="btn ghost sm" onClick={() => void handleToggleRaw()}>
