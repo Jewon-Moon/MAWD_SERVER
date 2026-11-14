@@ -7,6 +7,9 @@ import * as C from '@mawd/contracts';
 import type { createDb } from '../db/client.js';
 import type { AlertCenter } from '../alerts.js';
 import type { Bivia } from '../integrations/bivia.js';
+import type { Rag } from '../knowledge/rag.js';
+import type { Tracker } from '../integrations/tracker.js';
+import type { CommerceService } from '../commerce/service.js';
 import { ApiError, notFound } from '../errors.js';
 import type { Llm } from '../integrations/llm.js';
 import type { Tts } from '../integrations/tts.js';
@@ -18,7 +21,7 @@ import { finalizeInquiry, runTurn, startCallSession } from '../voice/turn.js';
 type Db = ReturnType<typeof createDb>;
 const idParam = z.object({ id: z.string().uuid() });
 
-export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCenter; bivia?: Bivia }): FastifyPluginAsyncZod {
+export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCenter; bivia?: Bivia; rag?: Rag; tracker?: Tracker; commerce?: CommerceService }): FastifyPluginAsyncZod {
   // shortcut: 통화 세션을 프로세스 메모리에 둠 (서버 1대 기준). 여러 대로 늘리면 Redis/DB로 옮기고 스티키 라우팅
   const sessions = new Map<string, CallSession & { card: z.infer<typeof C.Card> | null }>();
   const get = (id: string) => sessions.get(id) ?? notFound('call_not_found');
@@ -34,7 +37,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
       const id = randomUUID();
       const { sess, greeting } = await startCallSession(deps.db, tenantId, cfg, id);
       void deps.llm.warmup(); // 첫 턴 전에 연결 수립 (측정: 첫 턴 1.9s → 연결 재사용 시 0.8s 안팎)
-      if (voice.tts.engine !== 'browser') { // vapi 매장도 Vapi 키가 없을 때는 이 경로(서버 음성)로 대신 통화
+      if (voice.tts.engine !== 'browser' && deps.tts.configured !== false) { // vapi 매장도 Vapi 키가 없을 때는 이 경로(서버 음성)로 대신 통화
         // 고정 문구는 통화 시작에 미리 합성해 캐시에 넣어 둠 → 해당 턴은 기다림 없이 재생
         // 인사는 응답 직후 프론트가 바로 요청하며 스트리밍으로 받으므로 제외
         const fixed = [...(['verify_request', 'verify_failed', 'calm', 'handoff', 'call_close', 'abuse_warning'] as const).map((k) => renderTemplate(cfg, k)), ...voice.filler.phrases];
@@ -52,6 +55,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
     }, async (req) => {
       const tenantId = tenantOf();
       if (getTenantConfig(tenantId).settings.voice.tts.engine === 'browser') throw new ApiError(409, 'tts_engine_browser', '이 매장은 브라우저 음성을 씁니다.');
+      if (deps.tts.configured === false) throw new ApiError(409, 'tts_not_configured', '서버 음성 합성 키(TTS_API_KEY)가 없어 브라우저 음성으로 대체합니다.');
       const id = randomUUID();
       ttsJobs.set(id, { tenantId, text: req.body.text });
       setTimeout(() => ttsJobs.delete(id), 5 * 60_000).unref();
@@ -76,7 +80,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
       reply.raw.writeHead(200, { ...(reply.getHeaders() as OutgoingHttpHeaders), 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' });
       reply.raw.on('close', () => ac.abort()); // 클라이언트가 끊으면(끼어들기) LLM 호출도 취소
       try {
-        for await (const e of runTurn(sess, req.body.text, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, cfg: getTenantConfig(sess.tenantId) }, ac.signal)) {
+        for await (const e of runTurn(sess, req.body.text, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(sess.tenantId) }, ac.signal)) {
           if (ac.signal.aborted) break;
           reply.raw.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
           if (e.type === 'done' && e.end_call) sess.ended = true;
@@ -96,7 +100,7 @@ export function callRoutes(deps: { db: Db; llm: Llm; tts: Tts; alerts?: AlertCen
       sess.ended = true;
       sess.state = 'CLOSE';
       // 카드는 비동기 생성 → GET /calls/:id 로 폴링 (스펙 AC: 종료 1분 안)
-      finalizeInquiry(sess, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, cfg: getTenantConfig(sess.tenantId) })
+      finalizeInquiry(sess, { db: deps.db, llm: deps.llm, alerts: deps.alerts, bivia: deps.bivia, rag: deps.rag, tracker: deps.tracker, commerce: deps.commerce, cfg: getTenantConfig(sess.tenantId) })
         .then((card) => { sess.card = card; })
         .catch((err) => app.log.error({ err, call: sess.id }, 'call card failed'));
       return { inquiry_id: sess.inquiryId };
