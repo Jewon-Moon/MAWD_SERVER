@@ -42,12 +42,19 @@ export function inquiryRoutes(deps: { db: Db; sender?: ChatSender; instagram?: I
       return rows.map((r) => {
         const heat = a.get(r.id)?.heat ?? null;
         const card = c.get(r.id)?.summary as z.infer<typeof C.Card> | undefined;
-        const preview = (text.get(r.id) ?? '').slice(0, 500);
+        const previewRaw = (text.get(r.id) ?? '').slice(0, 500);
         const rep = lastReply.get(r.id);
-        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none' };
+        const raw = (a.get(r.id)?.raw ?? {}) as { category?: string; action?: 'hidden' | 'replied' | 'none'; abusive?: boolean };
+        const maskedSns = r.channel === 'sns' && (raw.action === 'hidden' || raw.abusive === true);
+        const preview = maskedSns
+          ? '부적절한 표현이 포함되어 요약본에서 가려졌습니다. 상세 화면의 원문 보기에서 확인할 수 있습니다.'
+          : previewRaw;
         return {
           id: r.id, channel: r.channel, status: r.status, route: r.route ?? (a.get(r.id)?.needsOwner ? 'B' as const : 'A' as const),
-          title: card?.title || preview.slice(0, 40) || '(내용 없음)', customer_name: r.customerName,
+          title: maskedSns
+            ? (raw.action === 'hidden' ? '숨김 처리된 악성 댓글' : '부적절한 표현 포함 댓글')
+            : (card?.title || preview.slice(0, 40) || '(내용 없음)'),
+          customer_name: r.customerName,
           category: raw.category || a.get(r.id)?.category || '기타', heat_label: labelOf(tenantId, heat), heat, preview,
           reply: rep?.text ?? null,
           reply_at: rep?.at ?? null,

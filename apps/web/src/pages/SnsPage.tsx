@@ -26,7 +26,7 @@ function handledBadge(it: InquiryItem): { label: string; tone: 'green' | 'blue' 
 export const SnsPage: React.FC = () => {
   const { data, setHandled, pullServer, showToast } = useApp();
   const [filter, setFilter] = useState<SnsFilter>('held');
-  const [revealedHiddenIds, setRevealedHiddenIds] = useState<Record<string, boolean>>({});
+  const [revealedHiddenTexts, setRevealedHiddenTexts] = useState<Record<string, string>>({});
   const [igConn, setIgConn] = useState<InstagramConnection | null>(null);
   const [igLoading, setIgLoading] = useState<boolean>(false);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -387,20 +387,40 @@ export const SnsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {it.snsAction === 'hidden' && !revealedHiddenIds[it.id] ? (
+                {it.snsAction === 'hidden' && revealedHiddenTexts[it.id] === undefined ? (
                   <div className="quote red" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                     <span>부적절한 표현으로 AI가 숨김 처리한 댓글입니다.</span>
                     <button
                       type="button"
                       className="btn ghost sm"
-                      onClick={() => setRevealedHiddenIds((prev) => ({ ...prev, [it.id]: true }))}
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            const res = await Api.inquiryMessages(it.id, true);
+                            const msgs: { sender?: string; text?: string }[] = Array.isArray(res)
+                              ? res
+                              : Array.isArray(res?.messages)
+                                ? res.messages
+                                : Array.isArray(res?.items)
+                                  ? res.items
+                                  : [];
+                            const custText = msgs
+                              .filter((m) => m.sender === 'customer' && m.text)
+                              .map((m) => m.text)
+                              .join(' ');
+                            setRevealedHiddenTexts((prev) => ({ ...prev, [it.id]: custText || it.text }));
+                          } catch {
+                            setRevealedHiddenTexts((prev) => ({ ...prev, [it.id]: it.text }));
+                          }
+                        })();
+                      }}
                     >
                       원문 보기
                     </button>
                   </div>
                 ) : (
                   <div className={`quote ${tone === 'red' ? 'red' : tone === 'gold' ? 'gold' : ''}`}>
-                    {it.text}
+                    {revealedHiddenTexts[it.id] ?? it.text}
                   </div>
                 )}
 
