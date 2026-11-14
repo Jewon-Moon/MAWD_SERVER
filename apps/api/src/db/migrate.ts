@@ -26,4 +26,13 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const url = process.env.OWNER_DATABASE_URL;
   if (!url) throw new Error('OWNER_DATABASE_URL is required');
   await migrate(url);
+  // 운영: 0001이 만든 개발용 비밀번호(app_user_dev)를 APP_DB_PASSWORD로 교체 (실행할 때마다 맞춤)
+  const pw = process.env.APP_DB_PASSWORD?.trim();
+  if (pw) {
+    // DATABASE_URL에 그대로 들어가고 SQL에도 직접 넣으므로 URL · SQL에 안전한 글자만 허용
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(pw)) throw new Error('APP_DB_PASSWORD는 영문 · 숫자 · _ · - 16자 이상이어야 합니다 (예: openssl rand -hex 24)');
+    const sql = postgres(url, { max: 1, onnotice: () => {} });
+    try { await sql.unsafe(`ALTER ROLE app_user PASSWORD '${pw}'`); console.log('app_user password set'); }
+    finally { await sql.end(); }
+  }
 }

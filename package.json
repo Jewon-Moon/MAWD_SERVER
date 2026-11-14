@@ -2,8 +2,6 @@
   "name": "mawd",
   "private": true,
   "scripts": {
-    "db:up": "docker compose up -d db",
-    "db:down": "docker compose down",
     "dev": "pnpm --filter @mawd/api dev",
     "test": "pnpm --filter @mawd/api test",
     "typecheck": "pnpm -r typecheck",

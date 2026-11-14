@@ -1,0 +1,47 @@
+# 운영용: API 서버 + Postgres를 서버 한 대에.
+#   1) cp .env.example .env  → DB_OWNER_PASSWORD · APP_DB_PASSWORD · LLM_API_KEY · PUBLIC_BASE_URL 등 채우기
+#   2) docker compose up -d --build   (시작할 때 마이그레이션 · 시드 후 서버)
+#   로그: docker compose logs -f api   ·   업데이트: git pull && docker compose up -d --build
+# DB는 외부에 포트를 열지 않음 (api 컨테이너만 접근). HTTPS는 앞단(Caddy · Nginx · Cloudflare 등)에서
+name: mawd-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?.env에 DB_OWNER_PASSWORD를 설정하세요}
+      POSTGRES_DB: mawd
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_owner -d mawd"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # .env의 로컬 주소 대신 compose 안의 db로. 비밀번호는 URL에 들어가므로 영문 · 숫자만 (openssl rand -hex 24)
+      OWNER_DATABASE_URL: postgres://app_owner:${DB_OWNER_PASSWORD}@db:5432/mawd
+      DATABASE_URL: postgres://app_user:${APP_DB_PASSWORD:?.env에 APP_DB_PASSWORD를 설정하세요}@db:5432/mawd
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      PORT: "8000"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  dbdata:
