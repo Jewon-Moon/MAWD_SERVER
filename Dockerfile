@@ -4,9 +4,11 @@ WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/
+COPY apps/mock-commerce/package.json apps/mock-commerce/
 COPY packages/contracts/package.json packages/contracts/
 RUN pnpm install --frozen-lockfile --prod
 COPY apps/api apps/api
+COPY apps/mock-commerce apps/mock-commerce
 COPY packages/contracts packages/contracts
 ENV NODE_ENV=production PORT=8000
 EXPOSE 8000

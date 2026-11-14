@@ -28,10 +28,12 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # .env의 로컬 주소 대신 compose 안의 db로. 비밀번호는 URL에 들어가므로 영문 · 숫자만 (openssl rand -hex 24)
+      # .env의 로컬 주소 대신 compose 안의 db · mock-commerce로. 비밀번호는 URL에 들어가므로 영문 · 숫자만 (openssl rand -hex 24)
       OWNER_DATABASE_URL: postgres://app_owner:${DB_OWNER_PASSWORD}@db:5432/mawd
       DATABASE_URL: postgres://app_user:${APP_DB_PASSWORD:?.env에 APP_DB_PASSWORD를 설정하세요}@db:5432/mawd
       APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      NAVER_API_BASE: http://mock-commerce:8100
+      COUPANG_API_BASE: http://mock-commerce:8100
       PORT: "8000"
     expose:
       - "8000"
@@ -44,6 +46,27 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  mock-commerce:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MOCK_COMMERCE_PORT: "8100"
+      MAWD_API_BASE: http://api:8000
+      MAWD_PUBLIC_URL: ${PUBLIC_BASE_URL:-http://localhost:${API_PORT:-8000}}
+    expose:
+      - "8100"
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["pnpm", "start:commerce"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   dbdata:

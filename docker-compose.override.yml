@@ -4,3 +4,6 @@ services:
   api:
     ports:
       - "${API_PORT:-8000}:8000"
+  mock-commerce:
+    ports:
+      - "${MOCK_COMMERCE_PORT:-8100}:8100"
