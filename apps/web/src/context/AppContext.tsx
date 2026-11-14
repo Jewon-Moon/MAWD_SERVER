@@ -135,11 +135,23 @@ function mapServerInquiry(raw: any): InquiryItem {
   };
 }
 
+export interface LiveAlert {
+  id: string;
+  title: string;
+  message: string;
+  priority?: string;
+  channel?: string;
+  inquiryId?: string | null;
+  createdAt?: string;
+}
+
 interface AppContextValue {
   data: StoreData;
   authChecked: boolean;
   isAuthed: boolean;
   toastMsg: string;
+  liveAlerts: LiveAlert[];
+  dismissLiveAlert: (id: string, ack?: boolean) => void;
   showToast: (msg: string) => void;
   pullServer: () => Promise<void>;
   applyMe: (me: any) => void;
@@ -166,14 +178,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [authChecked, setAuthChecked] = useState<boolean>(() => !Api.token());
   const [isAuthed, setIsAuthed] = useState<boolean>(() => Boolean(Api.token()));
   const [toastMsg, setToastMsg] = useState('');
+  const [liveAlerts, setLiveAlerts] = useState<LiveAlert[]>([]);
   const toastTimer = useRef<number | null>(null);
-  const lastAlertAt = useRef<string | undefined>(undefined);
+  const lastAlertAt = useRef<string>(new Date().toISOString());
+  const seenAlertIds = useRef<Set<string>>(new Set());
   const hydratingRef = useRef<Set<string>>(new Set());
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToastMsg(''), 2800);
+  }, []);
+
+  const dismissLiveAlert = useCallback((id: string, ack = false) => {
+    setLiveAlerts((prev) => prev.filter((a) => a.id !== id));
+    if (ack && Api.token()) {
+      void Api.ackAlert(id).catch(() => {});
+    }
+  }, []);
+
+  const pushLiveAlert = useCallback((alert: LiveAlert) => {
+    if (!alert.id || seenAlertIds.current.has(alert.id)) return;
+    seenAlertIds.current.add(alert.id);
+    if (alert.createdAt && alert.createdAt > lastAlertAt.current) {
+      lastAlertAt.current = alert.createdAt;
+    }
+    setLiveAlerts((prev) => [alert, ...prev.filter((x) => x.id !== alert.id)].slice(0, 3));
+    window.setTimeout(() => {
+      setLiveAlerts((prev) => prev.filter((x) => x.id !== alert.id));
+    }, 9000);
   }, []);
 
   const updateData = useCallback((updater: (prev: StoreData) => StoreData) => {
@@ -332,13 +365,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const kind = eventName !== 'message' ? eventName : String(payload?.type || '');
       if (kind === 'alert') {
         void pullServer();
-        if (typeof payload?.created_at === 'string') {
-          lastAlertAt.current = payload.created_at;
-        }
-        const msg = payload?.title || payload?.message;
-        if (typeof msg === 'string' && msg.trim()) {
-          showToast(msg);
-        }
+        const alertId = typeof payload?.id === 'string' ? payload.id : `sse-${Date.now()}`;
+        const createdAt = typeof payload?.created_at === 'string' ? payload.created_at : new Date().toISOString();
+        const title = typeof payload?.title === 'string' && payload.title.trim() ? payload.title.trim() : '새 실시간 알림';
+        const message = typeof payload?.message === 'string' ? payload.message.trim() : '';
+        pushLiveAlert({
+          id: alertId,
+          title,
+          message,
+          priority: typeof payload?.priority === 'string' ? payload.priority : undefined,
+          channel: typeof payload?.channel === 'string' ? payload.channel : undefined,
+          inquiryId: typeof payload?.inquiry_id === 'string' ? payload.inquiry_id : null,
+          createdAt,
+        });
       } else if (kind === 'inquiry') {
         void pullServer();
       }
@@ -399,27 +438,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (reconnectTimer) window.clearTimeout(reconnectTimer);
       ac?.abort();
     };
-  }, [isAuthed, pullServer, showToast]);
+  }, [isAuthed, pullServer, pushLiveAlert]);
 
   // 15s background polling for inquiries + alerts (fallback)
   useEffect(() => {
     if (!isAuthed || !Api.token()) return;
+    lastAlertAt.current = new Date().toISOString();
     const timer = window.setInterval(async () => {
       try {
         await pullServer();
-        const alertsRes = await Api.alerts(lastAlertAt.current).catch(() => null);
+        const since = lastAlertAt.current;
+        const alertsRes = await Api.alerts(since).catch(() => null);
         const list = alertsRes?.items || alertsRes?.alerts || (Array.isArray(alertsRes) ? alertsRes : []);
-        if (list.length > 0) {
-          const newest = list[0];
-          if (newest?.created_at) lastAlertAt.current = newest.created_at;
-          showToast(newest?.title || newest?.message || '새 긴급 알림이 도착했습니다');
+        const fresh = list.filter((a: any) => a?.id && !seenAlertIds.current.has(String(a.id)) && (!a?.created_at || a.created_at > since));
+        if (fresh.length > 0) {
+          for (const a of fresh.slice(0, 3).reverse()) {
+            pushLiveAlert({
+              id: String(a.id),
+              title: String(a.title || '새 실시간 알림'),
+              message: String(a.message || ''),
+              priority: typeof a.priority === 'string' ? a.priority : undefined,
+              channel: typeof a.channel === 'string' ? a.channel : undefined,
+              inquiryId: typeof a.inquiry_id === 'string' ? a.inquiry_id : null,
+              createdAt: typeof a.created_at === 'string' ? a.created_at : undefined,
+            });
+          }
         }
       } catch {
         // ignore transient polling errors
       }
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [isAuthed, pullServer, showToast]);
+  }, [isAuthed, pullServer, pushLiveAlert]);
 
   const hydrateInquiryDetail = useCallback(
     async (id: string) => {
@@ -685,6 +735,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authChecked,
       isAuthed,
       toastMsg,
+      liveAlerts,
+      dismissLiveAlert,
       showToast,
       pullServer,
       applyMe,
@@ -708,6 +760,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       authChecked,
       isAuthed,
       toastMsg,
+      liveAlerts,
+      dismissLiveAlert,
       showToast,
       pullServer,
       applyMe,

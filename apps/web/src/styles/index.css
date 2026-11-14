@@ -1009,6 +1009,82 @@ button.row:hover {
   border-color: var(--ink);
 }
 
+/* 실시간 알림 카드 (오른쪽 상단) */
+.live-alert-stack {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 16px;
+  z-index: 120;
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.live-alert-card {
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--r-l);
+  padding: 13px 15px;
+  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.14);
+}
+
+.live-alert-card.is-urgent {
+  border-left-color: var(--red);
+}
+
+.live-alert-card.is-high {
+  border-left-color: var(--gold);
+}
+
+.live-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.live-alert-close {
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.live-alert-close:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.live-alert-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.live-alert-msg {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.live-alert-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 토스트 */
 .toast {
   position: fixed;

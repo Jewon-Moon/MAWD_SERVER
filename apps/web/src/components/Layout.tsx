@@ -24,7 +24,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ title, subtitle, backTo, children }) => {
-  const { data, toastMsg } = useApp();
+  const { data, toastMsg, liveAlerts, dismissLiveAlert } = useApp();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -114,6 +114,46 @@ export const Layout: React.FC<LayoutProps> = ({ title, subtitle, backTo, childre
           </Link>
         ))}
       </nav>
+
+      {liveAlerts.length > 0 && (
+        <aside className="live-alert-stack" aria-live="assertive" aria-label="실시간 알림">
+          {liveAlerts.map((a) => {
+            const pTone = a.priority === 'urgent' ? 'red' : a.priority === 'high' ? 'gold' : 'blue';
+            const pLabel = a.priority === 'urgent' ? '긴급' : a.priority === 'high' ? '중요' : '알림';
+            return (
+              <div key={a.id} className={`live-alert-card ${a.priority === 'urgent' ? 'is-urgent' : a.priority === 'high' ? 'is-high' : ''}`} role="alert">
+                <div className="live-alert-head">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className={`chip ${pTone}`}>{pLabel}</span>
+                    {a.channel && <span className="chip gray">{a.channel}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    className="live-alert-close"
+                    aria-label="알림 닫기"
+                    onClick={() => dismissLiveAlert(a.id, true)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="live-alert-title">{a.title}</div>
+                {a.message && <div className="live-alert-msg">{a.message}</div>}
+                {a.inquiryId && (
+                  <div className="live-alert-actions">
+                    <Link
+                      to={`/inquiries/${encodeURIComponent(a.inquiryId)}`}
+                      className="btn sm"
+                      onClick={() => dismissLiveAlert(a.id, true)}
+                    >
+                      문의 확인하기
+                    </Link>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </aside>
+      )}
 
       {toastMsg && (
         <div className="toast" role="status" aria-live="polite">

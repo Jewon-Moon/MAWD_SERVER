@@ -166,7 +166,7 @@ export const Api = {
   deleteFaq: (id: string) => Api.req(`/faqs/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   /* Alerts */
-  alerts: (since?: string) => Api.req(`/alerts${since ? '?since=' + encodeURIComponent(since) : ''}`),
+  alerts: (after?: string) => Api.req(`/alerts${after ? '?after=' + encodeURIComponent(after) : ''}`),
   ackAlert: (id: string) => Api.req(`/alerts/${encodeURIComponent(id)}/ack`, { method: 'POST', body: '{}' }),
 
   /* Push Notifications */
