@@ -17,6 +17,19 @@ import { SettingsStorePage } from './pages/SettingsStorePage';
 import { LoginPage } from './pages/LoginPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 
+const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { isAuthed, data } = useApp();
+  if (!isAuthed) return <Navigate to="/login" replace />;
+  if (!data.settings.onboarded) return <Navigate to="/onboarding" replace />;
+  return children;
+};
+
+const RequireAuthOnly: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const { isAuthed } = useApp();
+  if (!isAuthed) return <Navigate to="/login" replace />;
+  return children;
+};
+
 const AppRoutes: React.FC = () => {
   const { authChecked, isAuthed, data } = useApp();
 
@@ -31,17 +44,6 @@ const AppRoutes: React.FC = () => {
       </div>
     );
   }
-
-  const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-    if (!isAuthed) return <Navigate to="/login" replace />;
-    if (!data.settings.onboarded) return <Navigate to="/onboarding" replace />;
-    return children;
-  };
-
-  const RequireAuthOnly: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-    if (!isAuthed) return <Navigate to="/login" replace />;
-    return children;
-  };
 
   return (
     <Routes>
